@@ -5,5 +5,17 @@
 
 [build.environment]
   NODE_VERSION = "20.16.0"
-  NEXT_CACHE_ENABLED = "true"
+  # Next.js cache optimization
+  NEXT_TELEMETRY_DISABLED = "1"
   NODE_OPTIONS = "--max-old-space-size=8192"
+
+# Enable build cache (this fixes the warning)
+[build.processing]
+  skip_processing = false
+
+# Cache configuration for faster rebuilds
+[build.cache]
+  # Cache node_modules between builds
+  node_modules = true
+  # Cache .next build output
+  directories = [".next/cache"]
