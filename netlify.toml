@@ -6,3 +6,7 @@
 [build.environment]
   NODE_VERSION = "20.16.0"
   NODE_OPTIONS = "--max-old-space-size=8192"
+
+# This section fixes the cache warning
+[build.processing]
+  skip_processing = false
