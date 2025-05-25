@@ -1,23 +1,11 @@
-.env
-.env-e
-.DS_Store
+# Next.js build cache
+.next/cache/
+.next/standalone/
+.next/static/
 
-# node.js
-#
+# Node modules cache
 node_modules/
-npm-debug.log
-yarn-error.log
 
-.eslintcache
-
+# Build outputs
 build/
-screenshots/
-
-# Anvil logs
-anvil*.log
-
-rainbowbx.xpi
-
-.idea/**
-
-static/data
+dist/
