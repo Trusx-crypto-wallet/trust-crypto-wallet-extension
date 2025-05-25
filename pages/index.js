@@ -1,5 +1,3 @@
-import { useState } from 'react'
-
 export default function Home() {
   return (
     <div style={{ 
@@ -53,43 +51,6 @@ export default function Home() {
       </div>
 
       <div style={{ 
-        display: 'grid', 
-        gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', 
-        gap: '2rem',
-        marginBottom: '3rem'
-      }}>
-        <div style={{ 
-          padding: '1.5rem', 
-          background: '#f8f9fa', 
-          borderRadius: '12px',
-          border: '1px solid #e9ecef'
-        }}>
-          <h3 style={{ color: '#0070f3' }}>🔐 Secure</h3>
-          <p>Your keys, your crypto. Advanced security with hardware wallet support.</p>
-        </div>
-        
-        <div style={{ 
-          padding: '1.5rem', 
-          background: '#f8f9fa', 
-          borderRadius: '12px',
-          border: '1px solid #e9ecef'
-        }}>
-          <h3 style={{ color: '#28a745' }}>⚡ Fast</h3>
-          <p>Lightning-fast transactions across multiple blockchain networks.</p>
-        </div>
-        
-        <div style={{ 
-          padding: '1.5rem', 
-          background: '#f8f9fa', 
-          borderRadius: '12px',
-          border: '1px solid #e9ecef'
-        }}>
-          <h3 style={{ color: '#dc3545' }}>🎨 Beautiful</h3>
-          <p>Intuitive design that makes DeFi accessible to everyone.</p>
-        </div>
-      </div>
-
-      <div style={{ 
         padding: '2rem', 
         background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)', 
         borderRadius: '12px',
@@ -118,5 +79,5 @@ export default function Home() {
         </button>
       </div>
     </div>
-  )
+  );
 }
