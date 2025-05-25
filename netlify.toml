@@ -1,0 +1,7 @@
+[build]
+  command = "npm run build:web"
+  publish = ".next"
+  functions = "api"
+
+[build.environment]
+  NODE_VERSION = "20.16.0"
