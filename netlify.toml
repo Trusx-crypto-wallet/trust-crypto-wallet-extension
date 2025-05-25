@@ -5,21 +5,5 @@
 
 [build.environment]
   NODE_VERSION = "20.16.0"
-  # Enable Next.js build cache
   NEXT_CACHE_ENABLED = "true"
-  # Increase Node.js memory for large builds
   NODE_OPTIONS = "--max-old-space-size=8192"
-
-# Build cache configuration
-[build.processing]
-  skip_processing = false
-
-# Cache node_modules and .next cache
-[[plugins]]
-  package = "netlify-plugin-cache"
-  
-  [plugins.inputs]
-    paths = [ 
-      "node_modules",
-      ".next/cache"
-    ]
