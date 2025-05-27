@@ -1,11 +1,154 @@
-# Next.js build cache
+# Next.js build cache and outputs
+.next/
 .next/cache/
 .next/standalone/
 .next/static/
+out/
 
-# Node modules cache
+# Dependencies
 node_modules/
+/.pnp
+.pnp.js
+.pnp.*
 
 # Build outputs
 build/
 dist/
+web-build/
+extension-build/
+
+# Testing
+/coverage
+*.lcov
+.nyc_output
+
+# Environment variables
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+.env*.local
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+lerna-debug.log*
+.pnpm-debug.log*
+
+# Runtime data
+pids/
+*.pid
+*.seed
+*.pid.lock
+
+# Diagnostic reports
+report.[0-9]*.[0-9]*.[0-9]*.[0-9]*.json
+
+# Optional npm cache directory
+.npm
+
+# Optional eslint cache
+.eslintcache
+
+# Optional stylelint cache
+.stylelintcache
+
+# Microbundle cache
+.rpt2_cache/
+.rts2_cache_cjs/
+.rts2_cache_es/
+.rts2_cache_umd/
+
+# Optional REPL history
+.node_repl_history
+
+# Output of 'npm pack'
+*.tgz
+
+# Yarn Integrity file
+.yarn-integrity
+
+# Yarn v2
+.yarn/cache
+.yarn/unplugged
+.yarn/build-state.yml
+.yarn/install-state.gz
+
+# Parcel-bundler cache
+.cache
+.parcel-cache
+
+# Serverless directories
+.serverless/
+
+# FuseBox cache
+.fusebox/
+
+# DynamoDB Local files
+.dynamodb/
+
+# TernJS port file
+.tern-port
+
+# Stores VSCode versions used for testing VSCode extensions
+.vscode-test
+
+# TypeScript
+*.tsbuildinfo
+next-env.d.ts
+
+# Turborepo
+.turbo
+
+# Vercel
+.vercel
+
+# Playwright
+/test-results/
+/playwright-report/
+/blob-report/
+/playwright/.cache/
+
+# Storybook build outputs
+.out
+.storybook-out
+storybook-static
+*storybook.log
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Editor directories and files
+.vscode/
+!.vscode/extensions.json
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+*.swp
+*.swo
+
+# Temporary folders
+tmp/
+temp/
+
+# Local Netlify folder
+.netlify
+
+# SvelteKit build / generate output
+.svelte-kit
+
+# Certificate files
+*.pem
