@@ -1,0 +1,164 @@
+{
+  "manifest_version": 3,
+  "name": "Trust Crypto Wallet",
+  "short_name": "Trust Wallet",
+  "version": "1.0.0",
+  "description": "Secure multi-chain crypto wallet with DeFi integrations, cross-chain bridging, and seamless Web3 connectivity",
+  "author": "Trust Wallet Team",
+  "homepage_url": "https://trustwallet.com",
+  "minimum_chrome_version": "88",
+  "default_locale": "en_US",
+
+  "icons": {
+    "16": "public/icons/icon-16.png",
+    "19": "public/icons/icon-19.png",
+    "32": "public/icons/icon-32.png",
+    "38": "public/icons/icon-38.png",
+    "48": "public/icons/icon-48.png",
+    "64": "public/icons/icon-64.png",
+    "128": "public/icons/icon-128.png",
+    "512": "public/icons/icon-512.png"
+  },
+
+  "action": {
+    "default_title": "Trust Crypto Wallet",
+    "default_popup": "extension/popup/index.html",
+    "default_icon": {
+      "16": "public/icons/icon-16.png",
+      "19": "public/icons/icon-19.png",
+      "32": "public/icons/icon-32.png",
+      "38": "public/icons/icon-38.png",
+      "48": "public/icons/icon-48.png",
+      "64": "public/icons/icon-64.png",
+      "128": "public/icons/icon-128.png",
+      "512": "public/icons/icon-512.png"
+    }
+  },
+
+  "background": {
+    "service_worker": "extension/background/background.js",
+    "type": "module"
+  },
+
+  "content_scripts": [
+    {
+      "matches": [
+        "http://*/*",
+        "https://*/*"
+      ],
+      "js": [
+        "extension/content-scripts/contentScript.js"
+      ],
+      "run_at": "document_start",
+      "all_frames": true
+    },
+    {
+      "matches": [
+        "http://*/*",
+        "https://*/*"
+      ],
+      "js": [
+        "extension/content-scripts/detector.js"
+      ],
+      "run_at": "document_end",
+      "all_frames": false
+    },
+    {
+      "matches": [
+        "*://connect.trezor.io/9/*"
+      ],
+      "js": [
+        "extension/content-scripts/trezor-support.js"
+      ]
+    }
+  ],
+
+  "web_accessible_resources": [
+    {
+      "matches": [
+        "<all_urls>"
+      ],
+      "resources": [
+        "extension/content-scripts/inpage.js",
+        "public/icons/*.png",
+        "public/images/chains/*",
+        "public/images/bridges/*",
+        "public/images/ui-icons/*",
+        "styles/*.css",
+        "*.woff2"
+      ]
+    }
+  ],
+
+  "permissions": [
+    "activeTab",
+    "clipboardWrite",
+    "scripting",
+    "storage",
+    "tabs",
+    "unlimitedStorage",
+    "notifications",
+    "alarms",
+    "idle"
+  ],
+
+  "host_permissions": [
+    "http://*/*",
+    "https://*/*",
+    "wss://*/*"
+  ],
+
+  "content_security_policy": {
+    "extension_pages": "script-src 'self' 'wasm-unsafe-eval'; object-src 'self'; connect-src 'self' https: wss:; frame-ancestors 'none';"
+  },
+
+  "externally_connectable": {
+    "matches": [
+      "https://trustwallet.com/*",
+      "https://*.trustwallet.com/*"
+    ]
+  },
+
+  "commands": {
+    "open-wallet": {
+      "suggested_key": {
+        "windows": "Ctrl+Shift+W",
+        "mac": "Command+Shift+W",
+        "chromeos": "Ctrl+Shift+W",
+        "linux": "Ctrl+Shift+W"
+      },
+      "description": "Open Trust Wallet"
+    },
+    "quick-send": {
+      "suggested_key": {
+        "windows": "Ctrl+Shift+S",
+        "mac": "Command+Shift+S",
+        "chromeos": "Ctrl+Shift+S",
+        "linux": "Ctrl+Shift+S"
+      },
+      "description": "Quick Send Tokens"
+    },
+    "show-receive": {
+      "suggested_key": {
+        "windows": "Ctrl+Shift+R",
+        "mac": "Command+Shift+R",
+        "chromeos": "Ctrl+Shift+R",
+        "linux": "Ctrl+Shift+R"
+      },
+      "description": "Show Receive Address"
+    }
+  },
+
+  "omnibox": {
+    "keyword": "trust"
+  },
+
+  "options_ui": {
+    "page": "extension/popup/index.html",
+    "open_in_tab": true
+  },
+
+  "side_panel": {
+    "default_path": "extension/popup/index.html?mode=sidepanel"
+  }
+}
