@@ -1,0 +1,33 @@
+/* Dark Theme for Trust Crypto Wallet */
+
+:root[data-theme="dark"] {
+  /* Primary Colors */
+  --color-primary: #7c3aed;
+  --color-primary-hover: #8b5cf6;
+  --color-secondary: #a855f7;
+  
+  /* Background Colors */
+  --bg-primary: #1a1a1a;
+  --bg-secondary: #2d2d2d;
+  --bg-tertiary: #404040;
+  
+  /* Text Colors */
+  --text-primary: #ffffff;
+  --text-secondary: #cccccc;
+  --text-tertiary: #999999;
+  
+  /* Border Colors */
+  --border-primary: #404040;
+  --border-secondary: #333333;
+  
+  /* Status Colors */
+  --color-success: #10b981;
+  --color-error: #ef4444;
+  --color-warning: #f59e0b;
+  --color-info: #3b82f6;
+  
+  /* Shadow */
+  --shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.3);
+  --shadow-md: 0 4px 20px rgba(0, 0, 0, 0.3);
+  --shadow-lg: 0 8px 40px rgba(0, 0, 0, 0.4);
+}
