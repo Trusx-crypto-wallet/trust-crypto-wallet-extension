@@ -1,123 +1,134 @@
+/* Popup-specific styles for Trust Crypto Wallet Extension */
+
 .popup-header {
-  @apply flex items-center justify-between p-4 border-b border-gray-200 bg-white;
+  @apply flex items-center justify-between p-4 border-b bg-white;
+  border-color: var(--border-primary);
 }
 
 [data-theme="dark"] .popup-header {
-  @apply border-gray-700 bg-gray-800;
+  @apply bg-gray-800;
+  border-color: var(--border-primary);
 }
 
 .popup-content {
   @apply flex-1 overflow-y-auto p-4;
+  background-color: var(--bg-primary);
 }
 
 .popup-footer {
-  @apply p-4 border-t border-gray-200 bg-white;
+  @apply p-4 border-t bg-white;
+  border-color: var(--border-primary);
 }
 
 [data-theme="dark"] .popup-footer {
-  @apply border-gray-700 bg-gray-800;
+  @apply bg-gray-800;
+  border-color: var(--border-primary);
 }
 
 .network-selector {
-  @apply flex items-center space-x-2 p-2 rounded-lg hover:bg-gray-100 cursor-pointer transition-colors;
+  @apply flex items-center space-x-2 p-2 rounded-lg cursor-pointer transition-colors;
+  background: var(--bg-secondary);
 }
 
-[data-theme="dark"] .network-selector {
-  @apply hover:bg-gray-700;
+.network-selector:hover {
+  background: var(--bg-tertiary);
 }
 
+/* Trust Brand Balance Card */
 .balance-card {
-  @apply bg-gradient-to-r from-blue-500 to-purple-600 text-white rounded-xl p-6 mb-4;
+  background: linear-gradient(135deg, var(--color-primary) 0%, var(--color-secondary) 100%);
+  @apply text-white rounded-xl p-6 mb-4;
+  box-shadow: var(--shadow-md);
 }
 
 .token-item {
-  @apply flex items-center justify-between p-3 hover:bg-gray-50 rounded-lg cursor-pointer transition-colors;
+  @apply flex items-center justify-between p-3 rounded-lg cursor-pointer transition-colors;
+  background: var(--bg-primary);
 }
 
-[data-theme="dark"] .token-item {
-  @apply hover:bg-gray-700;
+.token-item:hover {
+  background: var(--bg-secondary);
 }
 
 .transaction-item {
-  @apply flex items-center space-x-3 p-3 border-b border-gray-100 last:border-b-0;
+  @apply flex items-center space-x-3 p-3 border-b last:border-b-0;
+  border-color: var(--border-secondary);
 }
 
-[data-theme="dark"] .transaction-item {
-  @apply border-gray-700;
-}
-
+/* Trust Brand Quick Actions */
 .quick-action {
-  @apply flex flex-col items-center space-y-2 p-4 bg-gray-50 rounded-lg hover:bg-gray-100 cursor-pointer transition-colors;
+  @apply flex flex-col items-center space-y-2 p-4 rounded-lg cursor-pointer transition-all duration-300;
+  background: var(--bg-secondary);
 }
 
-[data-theme="dark"] .quick-action {
-  @apply bg-gray-700 hover:bg-gray-600;
+.quick-action:hover {
+  background: var(--bg-tertiary);
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-sm);
 }
 
 .bridge-route {
-  @apply border border-gray-200 rounded-lg p-4 hover:border-blue-300 cursor-pointer transition-colors;
+  @apply border rounded-lg p-4 cursor-pointer transition-colors;
+  border-color: var(--border-primary);
 }
 
-[data-theme="dark"] .bridge-route {
-  @apply border-gray-700 hover:border-blue-600;
+.bridge-route:hover {
+  border-color: var(--color-primary);
 }
 
 .fee-breakdown {
-  @apply bg-gray-50 rounded-lg p-4 space-y-2;
+  @apply rounded-lg p-4 space-y-2;
+  background: var(--bg-secondary);
 }
 
-[data-theme="dark"] .fee-breakdown {
-  @apply bg-gray-700;
-}
-
+/* Progress Steps with Trust Colors */
 .progress-step {
   @apply flex items-center space-x-3;
 }
 
 .progress-step.active {
-  @apply text-blue-600;
+  color: var(--color-primary);
 }
 
 .progress-step.completed {
-  @apply text-green-600;
+  color: var(--color-success);
 }
 
+/* Modal Components */
 .modal-overlay {
   @apply fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50;
 }
 
 .modal-content {
-  @apply bg-white rounded-xl max-w-md w-full mx-4 max-h-90vh overflow-y-auto;
+  @apply rounded-xl max-w-md w-full mx-4 max-h-90vh overflow-y-auto;
+  background: var(--bg-primary);
+  box-shadow: var(--shadow-lg);
 }
 
-[data-theme="dark"] .modal-content {
-  @apply bg-gray-800;
-}
-
+/* Toast Notifications */
 .toast {
-  @apply fixed top-4 right-4 bg-white border border-gray-200 rounded-lg shadow-lg p-4 z-50 min-w-80;
-}
-
-[data-theme="dark"] .toast {
-  @apply bg-gray-800 border-gray-700;
+  @apply fixed top-4 right-4 border rounded-lg p-4 z-50 min-w-80;
+  background: var(--bg-primary);
+  border-color: var(--border-primary);
+  box-shadow: var(--shadow-md);
 }
 
 .toast.success {
-  @apply border-green-200 bg-green-50;
-}
-
-[data-theme="dark"] .toast.success {
-  @apply border-green-700 bg-green-900;
+  background: var(--bg-primary);
+  border-color: var(--color-success);
 }
 
 .toast.error {
-  @apply border-red-200 bg-red-50;
+  background: var(--bg-primary);
+  border-color: var(--color-error);
 }
 
-[data-theme="dark"] .toast.error {
-  @apply border-red-700 bg-red-900;
+.toast.warning {
+  background: var(--bg-primary);
+  border-color: var(--color-warning);
 }
 
+/* Trust Brand Toggle Switch */
 .toggle-switch {
   @apply relative inline-block w-12 h-6;
 }
@@ -127,17 +138,69 @@
 }
 
 .toggle-slider {
-  @apply absolute cursor-pointer top-0 left-0 right-0 bottom-0 bg-gray-300 rounded-full transition-all duration-300;
+  @apply absolute cursor-pointer top-0 left-0 right-0 bottom-0 rounded-full transition-all duration-300;
+  background: var(--border-primary);
 }
 
 .toggle-slider:before {
   @apply absolute content-[''] h-5 w-5 left-0.5 bottom-0.5 bg-white rounded-full transition-all duration-300;
+  box-shadow: var(--shadow-sm);
 }
 
 input:checked + .toggle-slider {
-  @apply bg-blue-600;
+  background: var(--color-primary);
 }
 
 input:checked + .toggle-slider:before {
   @apply transform translate-x-6;
+}
+
+/* Trust Brand Icon Buttons */
+.icon-btn {
+  @apply p-2 rounded-lg transition-all duration-300;
+  background: var(--bg-secondary);
+}
+
+.icon-btn:hover {
+  background: var(--color-primary);
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-sm);
+}
+
+/* Trust Brand Primary Button Override */
+.btn-trust-primary {
+  background: linear-gradient(135deg, var(--color-primary) 0%, var(--color-secondary) 100%);
+  @apply text-white border-none rounded-xl px-6 py-3 font-semibold transition-all duration-300;
+}
+
+.btn-trust-primary:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 25px rgba(102, 126, 234, 0.3);
+}
+
+/* 24px Icon Support */
+.icon-24 {
+  width: 24px;
+  height: 24px;
+  @apply inline-block;
+}
+
+/* Quick Action Grid for 24px Icons */
+.quick-actions-grid {
+  @apply grid grid-cols-4 gap-4 p-4;
+}
+
+.quick-action-24 {
+  @apply flex flex-col items-center gap-2 p-3 rounded-xl transition-all duration-300;
+  background: var(--bg-secondary);
+}
+
+.quick-action-24:hover {
+  background: var(--color-primary);
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-sm);
+}
+
+.quick-action-24:hover .icon-24 {
+  filter: brightness(0) invert(1); /* Makes icons white on hover */
 }
