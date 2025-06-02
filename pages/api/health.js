@@ -1,8 +1,10 @@
 export default function handler(req, res) {
   res.status(200).json({ 
     status: 'ok', 
-    message: 'Rainbow Wallet API is running',
+    message: 'Trust Crypto Wallet API is running',
     timestamp: new Date().toISOString(),
-    version: '1.5.108'
+    version: '1.0.0',
+    wallet: 'Trust Crypto Wallet',
+    features: ['send', 'receive', 'swap', 'bridge', 'multi-chain']
   })
 }
