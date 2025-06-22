@@ -170,7 +170,8 @@
         "wagmi": "2.8.1",
         "word-wrap": "1.2.4",
         "zustand": "4.5.4",
-        "zod": "3.23.8"
+        "zod": "3.23.8",
+        "@radix-ui/react-polymorphic": "1.0.2",
     },
     "devDependencies": {
         "@foundry-rs/hardhat-anvil": "0.1.7",
@@ -304,7 +305,8 @@
         "@babel/runtime": "7.26.10",
         "@babel/runtime-corejs3": "7.26.10",
         "tar-fs": "3.0.8",
-        "base-x": "5.0.1"
+        "base-x": "5.0.1",
+        "@radix-ui/react-polymorphic": "1.0.2"
     },
     "lavamoat": {
         "allowScripts": {
