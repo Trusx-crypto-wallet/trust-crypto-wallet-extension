@@ -171,7 +171,7 @@
         "word-wrap": "1.2.4",
         "zustand": "4.5.4",
         "zod": "3.23.8",
-        "@radix-ui/react-polymorphic": "1.0.2",
+        "@radix-ui/react-polymorphic": "1.0.2"
     },
     "devDependencies": {
         "@foundry-rs/hardhat-anvil": "0.1.7",
