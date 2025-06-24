@@ -91,6 +91,29 @@
       "packages": {
         "webpack>terser-webpack-plugin": true
       }
+    },
+    "graceful-fs": {
+      "builtin": {
+        "fs": true,
+        "constants": true,
+        "stream": true,
+        "util": true
+      }
+    },
+    "next>graceful-fs": {
+      "builtin": {
+        "fs": true,
+        "constants": true,
+        "stream": true,
+        "util": true
+      }
+    },
+    "enhanced-resolve": {
+      "builtin": {
+        "fs": true,
+        "path": true,
+        "util": true
+      }
     }
   }
 }
