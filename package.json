@@ -304,7 +304,9 @@
         "@babel/runtime": "7.26.10",
         "@babel/runtime-corejs3": "7.26.10",
         "tar-fs": "3.0.8",
-        "base-x": "5.0.1"
+        "base-x": "5.0.1",
+        "ajv": "8.17.1",
+        "ajv-keywords": "5.1.0"
     },
     "lavamoat": {
         "allowScripts": {
