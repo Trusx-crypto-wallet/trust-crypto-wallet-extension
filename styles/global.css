@@ -1,14 +1,7 @@
-/* Tailwind CSS imports */
-@import 'tailwindcss/base';
-@import 'tailwindcss/components';
-@import 'tailwindcss/utilities';
-
-/* All styles consolidated in this file */
-
-/* Trust Crypto Wallet CSS Variables */
+/* Trust Crypto Wallet - Production CSS */
 :root {
-  --primary-color: #667eea;        /* Updated to Trust brand purple */
-  --secondary-color: #764ba2;      /* Updated to Trust brand gradient */
+  --primary-color: #667eea;
+  --secondary-color: #764ba2;
   --success-color: #10b981;
   --error-color: #ef4444;
   --warning-color: #f59e0b;
@@ -17,14 +10,11 @@
   --text-primary: #1f2937;
   --text-secondary: #6b7280;
   --border-color: #e5e7eb;
-  --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.05);
-  --shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.1);
-  --shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.1);
 }
 
 [data-theme="dark"] {
-  --primary-color: #7c3aed;        /* Updated for dark theme */
-  --secondary-color: #a855f7;      /* Updated for dark theme */
+  --primary-color: #7c3aed;
+  --secondary-color: #a855f7;
   --success-color: #34d399;
   --error-color: #f87171;
   --warning-color: #fbbf24;
@@ -54,50 +44,82 @@ body {
   padding: 0 1rem;
 }
 
-/* Updated button styles to use Trust brand colors */
 .btn {
-  @apply px-4 py-2 rounded-lg font-medium transition-all duration-200 cursor-pointer;
+  padding: 0.5rem 1rem;
+  border-radius: 0.5rem;
+  font-weight: 500;
+  transition: all 0.2s;
+  cursor: pointer;
+  border: none;
+  display: inline-block;
 }
 
 .btn-primary {
   background: linear-gradient(135deg, var(--primary-color) 0%, var(--secondary-color) 100%);
-  @apply text-white hover:opacity-90 active:opacity-80;
+  color: white;
+}
+
+.btn-primary:hover {
+  opacity: 0.9;
 }
 
 .btn-secondary {
-  @apply bg-gray-200 text-gray-800 hover:bg-gray-300 active:bg-gray-400;
+  background-color: #e5e7eb;
+  color: #1f2937;
+}
+
+.btn-secondary:hover {
+  background-color: #d1d5db;
 }
 
 .btn-success {
-  @apply bg-green-600 text-white hover:bg-green-700 active:bg-green-800;
+  background-color: #059669;
+  color: white;
 }
 
 .btn-danger {
-  @apply bg-red-600 text-white hover:bg-red-700 active:bg-red-800;
+  background-color: #dc2626;
+  color: white;
 }
 
-/* FIXED: Input styling with proper CSS syntax */
 .input {
-  @apply w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:border-blue-500 outline-none transition-all duration-200;
+  width: 100%;
+  padding: 0.75rem;
+  border: 1px solid #d1d5db;
+  border-radius: 0.5rem;
+  outline: none;
+  transition: all 0.2s;
 }
 
-/* Custom focus ring color using proper CSS */
 .input:focus {
-  --tw-ring-color: var(--primary-color);
-  --tw-ring-opacity: 0.5;
+  border-color: var(--primary-color);
+  box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
 }
 
 .card {
-  @apply bg-white rounded-xl shadow-md p-6 border border-gray-100;
+  background-color: white;
+  border-radius: 0.75rem;
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+  padding: 1.5rem;
+  border: 1px solid #f3f4f6;
 }
 
 [data-theme="dark"] .card {
-  @apply bg-gray-800 border-gray-700;
+  background-color: #1f2937;
+  border-color: #374151;
 }
 
 .loading-spinner {
-  @apply animate-spin rounded-full h-8 w-8 border-b-2;
-  border-color: var(--primary-color);
+  animation: spin 1s linear infinite;
+  border-radius: 50%;
+  height: 2rem;
+  width: 2rem;
+  border: 2px solid transparent;
+  border-bottom-color: var(--primary-color);
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
 }
 
 .fade-in {
@@ -109,16 +131,17 @@ body {
   to { opacity: 1; transform: translateY(0); }
 }
 
-.slide-up {
-  animation: slideUp 0.3s ease-out;
+.popup-container {
+  width: 375px;
+  min-height: 600px;
+  max-height: 600px;
+  overflow-y: auto;
 }
 
-@keyframes slideUp {
-  from { transform: translateY(100%); }
-  to { transform: translateY(0); }
+.trust-gradient {
+  background: linear-gradient(135deg, var(--primary-color) 0%, var(--secondary-color) 100%);
 }
 
-/* Scrollbar Styling */
 ::-webkit-scrollbar {
   width: 6px;
 }
@@ -132,28 +155,6 @@ body {
   border-radius: 3px;
 }
 
-::-webkit-scrollbar-thumb:hover {
-  background: var(--text-secondary);
-}
-
-/* Extension Popup Specific */
-.popup-container {
-  width: 375px;
-  min-height: 600px;
-  max-height: 600px;
-  overflow-y: auto;
-}
-
-/* Trust Crypto Wallet specific styles */
-.trust-gradient {
-  background: linear-gradient(135deg, var(--primary-color) 0%, var(--secondary-color) 100%);
-}
-
-.trust-shadow {
-  box-shadow: 0 8px 25px rgba(102, 126, 234, 0.15);
-}
-
-/* Responsive Design */
 @media (max-width: 768px) {
   .container {
     padding: 0 0.5rem;
