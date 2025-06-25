@@ -1,32 +1,62 @@
+// next.config.js
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  // Enable React strict mode
+  // CRITICAL: Static export configuration for Render
+  output: 'export',
+  trailingSlash: true,
+  assetPrefix: './',
+  
+  // Your existing environment variable exposure
+  env: {
+    TARGET_BROWSER: process.env.TARGET_BROWSER,
+    MANIFEST_VERSION: process.env.MANIFEST_VERSION,
+    PORT: process.env.PORT,
+    IS_DEV: process.env.IS_DEV,
+    IS_TESTING: process.env.IS_TESTING,
+    // Additional build-time variables
+    NODE_ENV: process.env.NODE_ENV,
+    HUSKY: process.env.HUSKY,
+  },
+  
+  // REQUIRED: Image optimization for static export
+  images: {
+    unoptimized: true,
+    domains: [
+      'github.com',
+      'raw.githubusercontent.com',
+      'avatars.githubusercontent.com',
+      'user-images.githubusercontent.com',
+    ],
+    // Allow loading from your specific token list repository
+    remotePatterns: [
+      {
+        protocol: 'https',
+        hostname: 'raw.githubusercontent.com',
+        pathname: '/Trusx-crypto-wallet/trust-crypto-wallet-tokenlist/**',
+      },
+    ],
+  },
+  
+  // Build optimizations
   reactStrictMode: true,
-  
-  // Use SWC for faster builds
   swcMinify: true,
+  poweredByHeader: false,
+  generateEtags: false,
   
-  // Disable ESLint during builds (fixes current build errors)
+  // Handle build errors during development
   eslint: {
     ignoreDuringBuilds: true,
   },
-  
-  // Disable TypeScript errors during builds
   typescript: {
     ignoreBuildErrors: true,
   },
   
-  // Optimize for production
-  poweredByHeader: false,
-  generateEtags: false,
-  
-  // Handle wallet-specific requirements
+  // Web3 compatibility
   experimental: {
-    // Enable Web3 compatibility
     esmExternals: true,
   },
   
-  // Webpack configuration for crypto libraries
+  // CRITICAL: Webpack configuration for crypto wallet
   webpack: (config, { buildId, dev, isServer, defaultLoaders, webpack }) => {
     // Handle crypto libraries in browser environment
     if (!isServer) {
@@ -86,35 +116,13 @@ const nextConfig = {
     return config;
   },
   
-  // Environment variables for web app
-  env: {
-    NEXT_PUBLIC_APP_NAME: 'Rainbow Wallet',
-    NEXT_PUBLIC_APP_VERSION: process.env.npm_package_version || '1.5.108',
-    NEXT_PUBLIC_BUILD_TIME: new Date().toISOString(),
-  },
-  
-  // Image optimization
-  images: {
-    // Disable image optimization for static export compatibility
-    unoptimized: true,
-    // Allowed domains for external images
-    domains: [
-      'assets.coingecko.com',
-      'token-icons.s3.amazonaws.com',
-      'raw.githubusercontent.com',
-    ],
-    // Image formats
-    formats: ['image/webp', 'image/avif'],
-  },
-  
-  // Compiler options
+  // Compiler optimizations
   compiler: {
-    // Remove console logs in production
     removeConsole: process.env.NODE_ENV === 'production',
   },
   
-  // Output configuration - standalone for Netlify
-  output: 'standalone',
+  // Optional: Customize output directory (default is 'out')
+  distDir: 'out',
 };
 
 module.exports = nextConfig;
