@@ -3,12 +3,7 @@
 @import 'tailwindcss/components';
 @import 'tailwindcss/utilities';
 
-/* Import theme variables */
-@import './themes/light.css';
-@import './themes/dark.css';
-
-/* Import component styles */
-@import './components.css';
+/* All styles consolidated in this file */
 
 /* Trust Crypto Wallet CSS Variables */
 :root {
