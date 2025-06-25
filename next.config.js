@@ -1,4 +1,3 @@
-// next.config.js
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   // CRITICAL: Static export configuration for Render
@@ -6,16 +5,17 @@ const nextConfig = {
   trailingSlash: true,
   assetPrefix: './',
   
-  // Your existing environment variable exposure
+  // Your existing environment variable exposure (NODE_ENV REMOVED)
   env: {
     TARGET_BROWSER: process.env.TARGET_BROWSER,
     MANIFEST_VERSION: process.env.MANIFEST_VERSION,
     PORT: process.env.PORT,
     IS_DEV: process.env.IS_DEV,
     IS_TESTING: process.env.IS_TESTING,
-    // Additional build-time variables
-    NODE_ENV: process.env.NODE_ENV,
+    // Additional build-time variables (NODE_ENV removed - it's automatically available)
     HUSKY: process.env.HUSKY,
+    // Add wallet-specific variables
+    CRYPTO_WALLET_VERSION: process.env.npm_package_version || 'v3',
   },
   
   // REQUIRED: Image optimization for static export
