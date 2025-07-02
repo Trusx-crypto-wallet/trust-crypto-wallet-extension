@@ -1,797 +1,1192 @@
+import { EventEmitter } from 'events';
+import { createHash, randomBytes } from 'crypto';
+import * as protocols from './protocols/index.js';
+import { BridgeError, UnsupportedProtocolError, InsufficientFundsError, NetworkError } from '../errors/BridgeErrors.js';
+import logger from '../utils/logger.js';
+
 /**
- * Enhanced Trust Crypto Wallet Bridge Manager
- * Production-grade orchestrator for cross-chain transfers with enterprise features
+ * Production-grade BridgeManager for cross-chain operations
+ * Implements enterprise-level reliability, security, and monitoring
  */
-
-import { ethers } from 'ethers';
-import { TransactionTracker } from './monitoring/TransactionTracker.js';
-import { StatusUpdater } from './monitoring/StatusUpdater.js';
-import { FailureHandler } from './monitoring/FailureHandler.js';
-
-export class BridgeManager {
-  constructor() {
-    this.protocols = new Map();
-    this.isInitialized = false;
-    this.supportedChains = [1, 137, 56, 43114, 42161, 10]; // ETH, Polygon, BSC, Avalanche, Arbitrum, Optimism
+export default class BridgeManager extends EventEmitter {
+  constructor(config = {}) {
+    super();
     
-    // Enhanced monitoring & tracking
-    this.transactionTracker = new TransactionTracker();
-    this.statusUpdater = new StatusUpdater();
-    this.failureHandler = new FailureHandler();
-    
-    // Bridge context & history
-    this.bridgeHistory = this._loadBridgeHistory();
-    this.bridgeContext = new Map();
-    
-    // Configuration
     this.config = {
-      maxRetries: 3,
-      retryDelay: 5000, // 5 seconds
-      statusPollInterval: 30000, // 30 seconds
-      cacheTimeout: 300000, // 5 minutes
-      supportedTokens: new Set(['ETH', 'USDC', 'USDT', 'WETH', 'DAI'])
+      // Core configuration
+      timeout: config.timeout || 300000, // 5 minutes
+      retryAttempts: config.retryAttempts || 5,
+      retryBackoffMs: config.retryBackoffMs || 1000,
+      maxRetryBackoffMs: config.maxRetryBackoffMs || 30000,
+      
+      // Security
+      maxConcurrentBridges: config.maxConcurrentBridges || 10,
+      rateLimitWindow: config.rateLimitWindow || 60000,
+      rateLimitRequests: config.rateLimitRequests || 100,
+      
+      // Protocol configuration
+      supportedProtocols: config.supportedProtocols || ['wormhole', 'layerzero', 'axelar', 'stargate'],
+      protocolWeights: config.protocolWeights || {},
+      
+      // Circuit breaker
+      circuitBreakerThreshold: config.circuitBreakerThreshold || 5,
+      circuitBreakerTimeout: config.circuitBreakerTimeout || 300000,
+      
+      // Monitoring
+      metricsEnabled: config.metricsEnabled !== false,
+      healthCheckInterval: config.healthCheckInterval || 30000,
+      
+      ...config
     };
-
-    // Initialize monitoring interval
-    this._initializeStatusMonitoring();
+    
+    // Core state
+    this.bridges = new Map();
+    this.protocolCapabilities = new Map();
+    this.initialized = false;
+    this.shutdown = false;
+    
+    // Security & Rate limiting
+    this.activeBridges = new Set();
+    this.rateLimitMap = new Map();
+    this.nonceTracker = new Map();
+    
+    // Circuit breaker state
+    this.circuitBreakers = new Map();
+    
+    // Transaction state management
+    this.pendingTransactions = new Map();
+    this.transactionHistory = new Map();
+    
+    // Monitoring
+    this.metrics = {
+      bridgesExecuted: 0,
+      bridgesSuccessful: 0,
+      bridgesFailed: 0,
+      totalVolume: 0n,
+      avgExecutionTime: 0,
+      protocolUsage: new Map()
+    };
+    
+    this.healthCheckTimer = null;
+    this.startTime = Date.now();
+    
+    this._setupHealthMonitoring();
+    this._setupGracefulShutdown();
+    
+    logger.info('Production BridgeManager initialized', {
+      supportedProtocols: this.config.supportedProtocols,
+      securityFeatures: ['rate_limiting', 'circuit_breaker', 'nonce_tracking', 'transaction_monitoring']
+    });
   }
 
   /**
-   * ✅ MODULARITY: Dynamic protocol loading with plug-and-play architecture
+   * Initialize all bridge protocols with comprehensive error handling
    */
-  async initialize() {
+  async initializeBridges() {
+    if (this.initialized) {
+      logger.warn('BridgeManager already initialized');
+      return;
+    }
+
+    const startTime = Date.now();
+    const initResults = new Map();
+    
     try {
-      console.log('🌉 Initializing Enhanced Trust Crypto Wallet Bridge System...');
+      logger.info('Initializing bridge protocols with production safeguards...');
       
-      // Dynamic protocol loading from /protocols/ directory
-      const protocolModules = await this._dynamicallyLoadProtocols();
-      
-      for (const [name, ProtocolClass] of protocolModules) {
+      // Initialize protocols with timeout and error isolation
+      const initPromises = this.config.supportedProtocols.map(async (protocolName) => {
+        const protocolStartTime = Date.now();
+        
         try {
-          const protocolInstance = new ProtocolClass({
-            retryHandler: this.failureHandler,
-            statusUpdater: this.statusUpdater
-          });
-          
-          await protocolInstance.initialize();
-          this.protocols.set(name, protocolInstance);
-          console.log(`✅ ${name} protocol loaded and initialized`);
-        } catch (error) {
-          console.warn(`⚠️ Failed to load ${name} protocol:`, error.message);
-          // Continue with other protocols instead of failing completely
-        }
-      }
+          const ProtocolClass = protocols[protocolName];
+          if (!ProtocolClass) {
+            throw new Error(`Protocol class not found: ${protocolName}`);
+          }
 
-      // Initialize monitoring systems
-      await this.transactionTracker.initialize();
-      await this.statusUpdater.initialize();
-      await this.failureHandler.initialize();
-
-      this.isInitialized = true;
-      console.log(`🚀 Bridge Manager operational with ${this.protocols.size} protocols`);
-      
-      return { 
-        success: true, 
-        protocols: Array.from(this.protocols.keys()),
-        loadedProtocols: this.protocols.size,
-        monitoringActive: true
-      };
-    } catch (error) {
-      console.error('❌ Bridge initialization failed:', error);
-      throw new Error(`Bridge setup failed: ${error.message}`);
-    }
-  }
-
-  /**
-   * 🛡 VALIDATION: Enhanced parameter validation with ethers.js
-   */
-  async getBridgeRoute(fromChain, toChain, tokenAddress, amount, options = {}) {
-    if (!this.isInitialized) {
-      throw new Error('Bridge system not initialized');
-    }
-
-    try {
-      // Enhanced validation with ethers
-      this._validateChains(fromChain, toChain);
-      this._validateTokenAddress(tokenAddress);
-      this._validateAmount(amount);
-
-      console.log(`🔍 Finding optimal route: ${fromChain} → ${toChain} for ${amount} tokens`);
-      
-      // Check cache first
-      const cacheKey = `route_${fromChain}_${toChain}_${tokenAddress}_${amount}`;
-      const cachedRoute = this._getFromCache(cacheKey);
-      if (cachedRoute) {
-        console.log('📋 Using cached route');
-        return cachedRoute;
-      }
-
-      // Get available protocols for this route
-      const availableProtocols = this._getAvailableProtocols(fromChain, toChain);
-      
-      if (availableProtocols.length === 0) {
-        throw new Error(`No bridge protocols support ${fromChain} → ${toChain}`);
-      }
-
-      // Calculate routes and fees with enhanced error handling
-      const routes = [];
-      const routePromises = availableProtocols.map(async (protocolName) => {
-        try {
-          const protocol = this.protocols.get(protocolName);
-          const route = await protocol.calculateRoute(fromChain, toChain, amount, tokenAddress);
-          return {
-            protocol: protocolName,
-            ...route,
-            reliability: await this._getProtocolReliability(protocolName),
-            estimatedGas: await this._estimateGasCost(protocolName, fromChain),
-            securityScore: this._getSecurityScore(protocolName)
-          };
-        } catch (error) {
-          console.warn(`⚠️ Route calculation failed for ${protocolName}:`, error.message);
-          return null;
-        }
-      });
-
-      const routeResults = await Promise.allSettled(routePromises);
-      
-      routeResults.forEach(result => {
-        if (result.status === 'fulfilled' && result.value) {
-          routes.push(result.value);
-        }
-      });
-
-      if (routes.length === 0) {
-        throw new Error('No protocols could calculate a valid route');
-      }
-
-      // Enhanced route scoring algorithm
-      const scoredRoutes = routes.map(route => ({
-        ...route,
-        score: this._calculateRouteScore(route)
-      }));
-
-      // Sort by best score
-      const optimalRoute = scoredRoutes.sort((a, b) => b.score - a.score)[0];
-
-      console.log(`✨ Optimal route found: ${optimalRoute.protocol} (score: ${optimalRoute.score.toFixed(2)})`);
-      
-      const result = {
-        recommended: optimalRoute,
-        alternatives: scoredRoutes.slice(1),
-        totalRoutes: routes.length,
-        calculatedAt: new Date().toISOString(),
-        cacheKey
-      };
-
-      // Cache the result
-      this._setCache(cacheKey, result);
-      
-      return result;
-
-    } catch (error) {
-      console.error('Route calculation failed:', error);
-      throw error;
-    }
-  }
-
-  /**
-   * 🔁 RETRY LOGIC: Enhanced bridge execution with comprehensive retry and monitoring
-   */
-  async executeBridge(bridgeParams) {
-    const { fromChain, toChain, tokenAddress, amount, recipientAddress, protocol = 'auto' } = bridgeParams;
-
-    let attempt = 0;
-    const maxAttempts = this.config.maxRetries + 1;
-
-    while (attempt < maxAttempts) {
-      try {
-        attempt++;
-        console.log(`🚀 Bridge execution attempt ${attempt}/${maxAttempts}`);
-
-        // Enhanced validation
-        await this._validateBridgeParams(bridgeParams);
-
-        // Auto-select protocol if not specified
-        let selectedProtocol = protocol;
-        if (protocol === 'auto') {
-          const route = await this.getBridgeRoute(fromChain, toChain, tokenAddress, amount);
-          selectedProtocol = route.recommended.protocol;
-        }
-
-        // Get protocol instance
-        const protocolInstance = this.protocols.get(selectedProtocol);
-        if (!protocolInstance) {
-          throw new Error(`Protocol ${selectedProtocol} not available`);
-        }
-
-        // Generate enhanced transaction ID with metadata
-        const transactionId = this._generateTransactionId();
-        const bridgeContext = {
-          transactionId,
-          protocol: selectedProtocol,
-          fromChain,
-          toChain,
-          tokenAddress,
-          amount,
-          recipientAddress,
-          timestamp: Date.now(),
-          attempt,
-          userAgent: typeof navigator !== 'undefined' ? navigator.userAgent : 'server'
-        };
-
-        // Store bridge context
-        this.bridgeContext.set(transactionId, bridgeContext);
-        this._saveBridgeContext(transactionId, bridgeContext);
-
-        console.log(`📋 Transaction ID: ${transactionId}`);
-        console.log(`🔗 Using protocol: ${selectedProtocol}`);
-
-        // 📊 MONITORING: Start comprehensive tracking
-        await this.transactionTracker.startTracking(transactionId, bridgeContext);
-
-        // Execute the bridge transfer with enhanced monitoring
-        const result = await this._executeBridgeWithMonitoring(
-          protocolInstance, 
-          bridgeParams, 
-          transactionId
-        );
-
-        // Success - update context and start monitoring
-        const finalResult = {
-          transactionId,
-          protocol: selectedProtocol,
-          status: 'initiated',
-          attempt,
-          txHash: result.txHash,
-          estimatedTime: result.estimatedTime,
-          trackingUrl: result.trackingUrl,
-          initiatedAt: new Date().toISOString(),
-          gasEstimate: result.gasEstimate
-        };
-
-        // Update bridge context with result
-        bridgeContext.result = finalResult;
-        this.bridgeContext.set(transactionId, bridgeContext);
-        this._saveBridgeContext(transactionId, bridgeContext);
-
-        // Add to bridge history
-        this._addToBridgeHistory(finalResult);
-
-        // Start real-time status monitoring
-        this._startRealTimeMonitoring(transactionId);
-
-        return finalResult;
-
-      } catch (error) {
-        console.error(`❌ Bridge execution attempt ${attempt} failed:`, error);
-
-        // Handle failure with enhanced retry logic
-        if (attempt < maxAttempts) {
-          const retryDelay = this.config.retryDelay * Math.pow(2, attempt - 1); // Exponential backoff
-          console.log(`⏳ Retrying in ${retryDelay}ms...`);
-          
-          await this.failureHandler.handleFailure(
-            `attempt_${attempt}`, 
-            error, 
-            { ...bridgeParams, attempt }
+          // Initialize with timeout
+          const protocolInstance = await this._withTimeout(
+            new ProtocolClass(this.config[protocolName] || {}).initialize(),
+            this.config.timeout,
+            `Protocol ${protocolName} initialization timeout`
           );
           
-          await this._sleep(retryDelay);
-          continue;
-        } else {
-          // Final failure - comprehensive error handling
-          const transactionId = this._generateTransactionId();
-          await this.failureHandler.handleFailure(transactionId, error, bridgeParams);
+          // Validate protocol implementation
+          this._validateProtocolImplementation(protocolInstance, protocolName);
           
-          // Store failed attempt
-          this._addToBridgeHistory({
-            transactionId,
-            status: 'failed',
-            error: error.message,
-            attempts: attempt,
-            failedAt: new Date().toISOString(),
-            ...bridgeParams
+          // Store protocol and capabilities
+          this.bridges.set(protocolName, protocolInstance);
+          this.protocolCapabilities.set(protocolName, protocolInstance.getCapabilities());
+          
+          // Initialize circuit breaker
+          this.circuitBreakers.set(protocolName, {
+            failures: 0,
+            lastFailure: null,
+            state: 'CLOSED' // CLOSED, OPEN, HALF_OPEN
           });
-
-          throw new Error(`Bridge execution failed after ${attempt} attempts: ${error.message}`);
+          
+          const initTime = Date.now() - protocolStartTime;
+          initResults.set(protocolName, { success: true, initTime });
+          
+          logger.info(`Protocol ${protocolName} initialized successfully`, { initTime });
+          this.emit('protocolInitialized', { protocol: protocolName, initTime });
+          
+        } catch (error) {
+          const initTime = Date.now() - protocolStartTime;
+          initResults.set(protocolName, { success: false, error: error.message, initTime });
+          
+          logger.error(`Failed to initialize protocol ${protocolName}:`, {
+            error: error.message,
+            stack: error.stack,
+            initTime
+          });
+          
+          this.emit('protocolError', { protocol: protocolName, error, initTime });
         }
+      });
+
+      await Promise.allSettled(initPromises);
+      
+      // Validate at least one protocol initialized successfully
+      if (this.bridges.size === 0) {
+        throw new BridgeError('No bridge protocols initialized successfully');
       }
+      
+      this.initialized = true;
+      const totalInitTime = Date.now() - startTime;
+      
+      logger.info('Bridge initialization complete', {
+        successfulProtocols: Array.from(this.bridges.keys()),
+        failedProtocols: Array.from(initResults.entries())
+          .filter(([, result]) => !result.success)
+          .map(([protocol]) => protocol),
+        totalInitTime,
+        results: Object.fromEntries(initResults)
+      });
+      
+      this.emit('initialized', {
+        protocols: Array.from(this.bridges.keys()),
+        initTime: totalInitTime,
+        results: Object.fromEntries(initResults)
+      });
+      
+    } catch (error) {
+      logger.error('Critical bridge initialization failure:', error);
+      throw new BridgeError('Failed to initialize bridge system', error);
     }
   }
 
   /**
-   * 📊 MONITORING: Real-time transaction status with webhook integration
+   * Get bridge instance with circuit breaker protection
    */
-  async getTransactionStatus(transactionId) {
+  getBridge(protocol) {
+    if (!this.initialized) {
+      throw new BridgeError('BridgeManager not initialized');
+    }
+    
+    if (this.shutdown) {
+      throw new BridgeError('BridgeManager is shutting down');
+    }
+    
+    const bridge = this.bridges.get(protocol);
+    if (!bridge) {
+      return null;
+    }
+    
+    // Check circuit breaker
+    const circuitBreaker = this.circuitBreakers.get(protocol);
+    if (circuitBreaker?.state === 'OPEN') {
+      const timeSinceLastFailure = Date.now() - circuitBreaker.lastFailure;
+      if (timeSinceLastFailure < this.config.circuitBreakerTimeout) {
+        throw new BridgeError(`Protocol ${protocol} circuit breaker is OPEN`);
+      } else {
+        // Transition to HALF_OPEN
+        circuitBreaker.state = 'HALF_OPEN';
+        logger.info(`Circuit breaker transitioning to HALF_OPEN for protocol ${protocol}`);
+      }
+    }
+    
+    return bridge;
+  }
+
+  /**
+   * Get supported protocols with health status
+   */
+  getSupportedProtocols() {
+    return Array.from(this.bridges.keys()).filter(protocol => {
+      const circuitBreaker = this.circuitBreakers.get(protocol);
+      return circuitBreaker?.state !== 'OPEN';
+    });
+  }
+
+  /**
+   * Estimate bridge fee with comprehensive validation and caching
+   */
+  async estimateBridgeFee(params) {
+    const requestId = this._generateRequestId();
+    const startTime = Date.now();
+    
     try {
-      // Get from real-time tracker first
-      const trackerStatus = await this.transactionTracker.getTransactionStatus(transactionId);
+      // Rate limiting
+      await this._checkRateLimit(params.userAddress || 'anonymous');
       
-      if (trackerStatus) {
-        return {
-          transactionId,
-          status: trackerStatus.status,
-          progress: trackerStatus.progress,
-          estimatedCompletion: trackerStatus.estimatedCompletion,
-          confirmations: trackerStatus.confirmations,
-          lastUpdated: trackerStatus.lastUpdated,
-          protocol: trackerStatus.protocol,
-          bridgeContext: this.bridgeContext.get(transactionId)
-        };
+      // Comprehensive validation
+      this.validateBridgeParams(params);
+      
+      const { protocol, sourceChain, targetChain, amount, token } = params;
+      const bridge = this.getBridge(protocol);
+      
+      if (!bridge) {
+        throw new UnsupportedProtocolError(`Protocol ${protocol} not available`);
       }
 
-      // Fallback to protocol-specific status check
-      const context = this.bridgeContext.get(transactionId);
-      if (context && context.protocol) {
-        const protocol = this.protocols.get(context.protocol);
-        if (protocol) {
-          const protocolStatus = await protocol.getTransactionStatus(context.result?.txHash);
-          return {
-            transactionId,
-            ...protocolStatus,
-            bridgeContext: context
-          };
-        }
-      }
+      // Check protocol capabilities
+      const capabilities = this.getProtocolCapabilities(protocol);
+      this._validateChainSupport(capabilities, sourceChain, targetChain);
+      this._validateTokenSupport(capabilities, token);
+      this._validateAmountLimits(capabilities, amount);
 
-      throw new Error(`Transaction ${transactionId} not found`);
+      logger.debug('Estimating bridge fee', { requestId, ...params });
+      
+      // Execute fee estimation with retry logic
+      const feeEstimate = await this._executeWithRetry(
+        () => bridge.estimateFee({
+          sourceChain,
+          targetChain,
+          amount,
+          token,
+          gasPrice: params.gasPrice,
+          recipient: params.recipient
+        }),
+        protocol,
+        'estimateFee'
+      );
+
+      const executionTime = Date.now() - startTime;
+      
+      // Enhanced fee estimate with additional metadata
+      const enhancedEstimate = {
+        ...feeEstimate,
+        protocol,
+        requestId,
+        timestamp: Date.now(),
+        executionTime,
+        chainInfo: {
+          sourceChain,
+          targetChain,
+          estimatedConfirmations: capabilities.estimatedConfirmations?.[sourceChain] || 12
+        },
+        riskAssessment: this._assessTransactionRisk(params, capabilities)
+      };
+
+      this.emit('feeEstimated', { params, estimate: enhancedEstimate, requestId });
+      
+      return enhancedEstimate;
+      
     } catch (error) {
-      console.error('Status check failed:', error);
+      const executionTime = Date.now() - startTime;
+      logger.error('Fee estimation failed:', { error: error.message, requestId, executionTime });
+      this.emit('error', { type: 'feeEstimation', error, params, requestId });
+      
+      this._handleCircuitBreaker(params.protocol, error);
       throw error;
     }
   }
 
   /**
-   * 🪪 BRIDGE CONTEXT: Enhanced history and session management
+   * Execute bridge transaction with full production safeguards
    */
-  getBridgeHistory(filters = {}) {
-    const { limit = 50, status, protocol, fromChain, toChain } = filters;
+  async executeBridge(params) {
+    const transactionId = this._generateTransactionId();
+    const startTime = Date.now();
     
-    let history = [...this.bridgeHistory];
-
-    // Apply filters
-    if (status) {
-      history = history.filter(item => item.status === status);
-    }
-    if (protocol) {
-      history = history.filter(item => item.protocol === protocol);
-    }
-    if (fromChain) {
-      history = history.filter(item => item.fromChain === fromChain);
-    }
-    if (toChain) {
-      history = history.filter(item => item.toChain === toChain);
-    }
-
-    // Sort by most recent first
-    history.sort((a, b) => new Date(b.initiatedAt || b.failedAt) - new Date(a.initiatedAt || a.failedAt));
-
-    return {
-      total: history.length,
-      items: history.slice(0, limit),
-      hasMore: history.length > limit
-    };
-  }
-
-  /**
-   * Get comprehensive bridge statistics
-   */
-  getBridgeStats() {
-    const history = this.bridgeHistory;
-    const totalTransactions = history.length;
-    const successfulTransactions = history.filter(tx => tx.status === 'completed').length;
-    const failedTransactions = history.filter(tx => tx.status === 'failed').length;
-    const pendingTransactions = history.filter(tx => tx.status === 'pending' || tx.status === 'initiated').length;
-
-    const protocolUsage = {};
-    history.forEach(tx => {
-      if (tx.protocol) {
-        protocolUsage[tx.protocol] = (protocolUsage[tx.protocol] || 0) + 1;
-      }
-    });
-
-    return {
-      overview: {
-        totalProtocols: this.protocols.size,
-        isInitialized: this.isInitialized,
-        supportedChains: this.supportedChains,
-        activeTransactions: this.transactionTracker.getActiveTransactionCount()
-      },
-      transactions: {
-        total: totalTransactions,
-        successful: successfulTransactions,
-        failed: failedTransactions,
-        pending: pendingTransactions,
-        successRate: totalTransactions > 0 ? ((successfulTransactions / totalTransactions) * 100).toFixed(2) + '%' : '0%'
-      },
-      protocols: {
-        usage: protocolUsage,
-        available: Array.from(this.protocols.keys())
-      },
-      monitoring: {
-        trackerActive: this.transactionTracker.isActive(),
-        statusUpdaterActive: this.statusUpdater.isActive(),
-        failureHandlerActive: this.failureHandler.isActive()
-      }
-    };
-  }
-
-  // ===============================
-  // ENHANCED PRIVATE METHODS
-  // ===============================
-
-  /**
-   * ✅ MODULARITY: Dynamic protocol loading
-   */
-  async _dynamicallyLoadProtocols() {
-    const protocolModules = new Map();
-    
-    const protocolFiles = [
-      'layerZero',
-      'axelar', 
-      'wormhole',
-      'chainlink',
-      'hyperlane'
-    ];
-
-    for (const protocolName of protocolFiles) {
-      try {
-        // Dynamic import of protocol modules
-        const module = await import(`./protocols/${protocolName}.js`);
-        const ProtocolClass = module.default || module[`${protocolName.charAt(0).toUpperCase() + protocolName.slice(1)}Protocol`];
-        
-        if (ProtocolClass) {
-          protocolModules.set(protocolName, ProtocolClass);
-          console.log(`📦 Loaded ${protocolName} protocol module`);
-        }
-      } catch (error) {
-        console.warn(`⚠️ Could not load ${protocolName} protocol:`, error.message);
-      }
-    }
-
-    return protocolModules;
-  }
-
-  /**
-   * 🛡 VALIDATION: Enhanced validation with ethers.js
-   */
-  _validateChains(fromChain, toChain) {
-    if (!Number.isInteger(fromChain) || !Number.isInteger(toChain)) {
-      throw new Error('Chain IDs must be integers');
-    }
-    
-    if (fromChain === toChain) {
-      throw new Error('Source and destination chains cannot be the same');
-    }
-
-    if (!this.supportedChains.includes(fromChain)) {
-      throw new Error(`Unsupported source chain: ${fromChain}`);
-    }
-    
-    if (!this.supportedChains.includes(toChain)) {
-      throw new Error(`Unsupported destination chain: ${toChain}`);
-    }
-  }
-
-  _validateTokenAddress(tokenAddress) {
-    if (!tokenAddress || typeof tokenAddress !== 'string') {
-      throw new Error('Token address is required');
-    }
-
-    if (!ethers.isAddress(tokenAddress)) {
-      throw new Error(`Invalid token address format: ${tokenAddress}`);
-    }
-
-    // Additional validation for known token addresses
-    if (tokenAddress === ethers.ZeroAddress) {
-      throw new Error('Zero address not allowed for token transfers');
-    }
-  }
-
-  _validateAmount(amount) {
-    if (!amount || amount === '0') {
-      throw new Error('Amount must be greater than 0');
-    }
-
     try {
-      const parsedAmount = ethers.parseUnits(amount.toString(), 18);
-      if (parsedAmount <= 0n) {
-        throw new Error('Amount must be positive');
-      }
+      // Pre-execution security checks
+      await this._performSecurityChecks(params, transactionId);
       
-      // Check for reasonable upper bound (1 billion tokens)
-      const maxAmount = ethers.parseUnits('1000000000', 18);
-      if (parsedAmount > maxAmount) {
-        throw new Error('Amount exceeds maximum allowed limit');
+      // Comprehensive validation
+      this.validateBridgeParams(params);
+      
+      const { protocol, sourceChain, targetChain, amount, token, recipient } = params;
+      const bridge = this.getBridge(protocol);
+      
+      if (!bridge) {
+        throw new UnsupportedProtocolError(`Protocol ${protocol} not available`);
       }
-    } catch (error) {
-      throw new Error(`Invalid amount format: ${error.message}`);
-    }
-  }
 
-  async _validateBridgeParams(params) {
-    const { fromChain, toChain, tokenAddress, amount, recipientAddress } = params;
+      // Duplicate transaction check
+      const txHash = this._generateTransactionHash(params);
+      if (this.transactionHistory.has(txHash)) {
+        throw new BridgeError('Duplicate transaction detected');
+      }
 
-    // Validate all parameters
-    this._validateChains(fromChain, toChain);
-    this._validateTokenAddress(tokenAddress);
-    this._validateAmount(amount);
+      // Concurrency control
+      if (this.activeBridges.size >= this.config.maxConcurrentBridges) {
+        throw new BridgeError('Maximum concurrent bridges limit reached');
+      }
 
-    if (!recipientAddress || !ethers.isAddress(recipientAddress)) {
-      throw new Error(`Invalid recipient address: ${recipientAddress}`);
-    }
+      // Protocol-specific validation
+      const capabilities = this.getProtocolCapabilities(protocol);
+      this._validateChainSupport(capabilities, sourceChain, targetChain);
+      this._validateTokenSupport(capabilities, token);
+      this._validateAmountLimits(capabilities, amount);
 
-    if (recipientAddress === ethers.ZeroAddress) {
-      throw new Error('Cannot send to zero address');
-    }
-
-    // Additional business logic validation
-    const availableProtocols = this._getAvailableProtocols(fromChain, toChain);
-    if (availableProtocols.length === 0) {
-      throw new Error(`No bridge protocols support the route ${fromChain} → ${toChain}`);
-    }
-  }
-
-  /**
-   * Enhanced transaction execution with monitoring
-   */
-  async _executeBridgeWithMonitoring(protocol, params, transactionId) {
-    try {
-      // Pre-execution monitoring
-      await this.statusUpdater.notifySubscribers(transactionId, {
-        status: 'preparing',
-        message: 'Preparing bridge transaction...',
-        timestamp: Date.now()
-      });
-
-      // Execute the bridge
-      const result = await protocol.bridge({
-        ...params,
+      logger.info('Executing bridge transaction', {
         transactionId,
-        onStatusUpdate: (status) => {
-          this.statusUpdater.notifySubscribers(transactionId, status);
+        protocol,
+        sourceChain,
+        targetChain,
+        amount: amount.toString(),
+        token,
+        recipient
+      });
+
+      // Track transaction state
+      this.activeBridges.add(transactionId);
+      this.pendingTransactions.set(transactionId, {
+        params,
+        startTime,
+        status: 'PENDING'
+      });
+
+      this.emit('bridgeStarted', { params, transactionId });
+
+      // Execute bridge with comprehensive monitoring
+      const bridgeParams = {
+        sourceChain,
+        targetChain,
+        amount,
+        token,
+        recipient,
+        slippage: params.slippage || 0.005,
+        deadline: params.deadline || Date.now() + (30 * 60 * 1000),
+        nonce: this._generateNonce(params.userAddress || 'system'),
+        metadata: {
+          transactionId,
+          userAddress: params.userAddress,
+          timestamp: startTime
         }
-      });
+      };
 
-      // Post-execution monitoring
-      await this.statusUpdater.notifySubscribers(transactionId, {
-        status: 'submitted',
-        message: 'Transaction submitted to blockchain',
+      const result = await this._executeWithRetry(
+        () => bridge.executeBridge(bridgeParams),
+        protocol,
+        'executeBridge'
+      );
+
+      const executionTime = Date.now() - startTime;
+
+      // Enhanced result with tracking information
+      const enhancedResult = {
+        ...result,
+        transactionId,
+        protocol,
+        sourceChain,
+        targetChain,
+        executionTime,
+        timestamp: Date.now(),
+        status: 'COMPLETED',
+        confirmations: {
+          required: capabilities.requiredConfirmations?.[sourceChain] || 12,
+          current: 0
+        }
+      };
+
+      // Update tracking
+      this.transactionHistory.set(txHash, enhancedResult);
+      this.pendingTransactions.delete(transactionId);
+      this.activeBridges.delete(transactionId);
+
+      // Update metrics
+      this._updateMetrics(protocol, amount, executionTime, true);
+
+      // Handle circuit breaker success
+      this._handleCircuitBreakerSuccess(protocol);
+
+      logger.info('Bridge transaction completed successfully', {
+        transactionId,
         txHash: result.txHash,
-        timestamp: Date.now()
+        protocol,
+        executionTime
       });
 
-      return result;
+      this.emit('bridgeCompleted', { params, result: enhancedResult, transactionId });
+      
+      // Start confirmation monitoring
+      this._monitorTransactionConfirmations(enhancedResult, bridge);
+      
+      return enhancedResult;
+      
     } catch (error) {
-      await this.statusUpdater.notifySubscribers(transactionId, {
-        status: 'error',
-        message: error.message,
-        timestamp: Date.now()
+      const executionTime = Date.now() - startTime;
+      
+      // Cleanup on failure
+      this.activeBridges.delete(transactionId);
+      const pendingTx = this.pendingTransactions.get(transactionId);
+      if (pendingTx) {
+        pendingTx.status = 'FAILED';
+        pendingTx.error = error.message;
+      }
+
+      // Update metrics
+      this._updateMetrics(params.protocol, params.amount, executionTime, false);
+
+      // Handle circuit breaker
+      this._handleCircuitBreaker(params.protocol, error);
+
+      logger.error('Bridge execution failed:', {
+        error: error.message,
+        transactionId,
+        executionTime,
+        stack: error.stack
       });
+
+      this.emit('bridgeError', { params, error, transactionId });
+      
+      // Transform specific errors
+      if (error.code === 'INSUFFICIENT_FUNDS') {
+        throw new InsufficientFundsError(error.message);
+      } else if (error.code === 'NETWORK_ERROR') {
+        throw new NetworkError(error.message);
+      }
+      
       throw error;
     }
   }
 
   /**
-   * Real-time monitoring setup
+   * Comprehensive parameter validation with security checks
    */
-  _startRealTimeMonitoring(transactionId) {
-    const interval = setInterval(async () => {
-      try {
-        const status = await this.getTransactionStatus(transactionId);
-        
-        if (status.status === 'completed' || status.status === 'failed') {
-          clearInterval(interval);
-          console.log(`🏁 Monitoring complete for ${transactionId}: ${status.status}`);
-        }
-      } catch (error) {
-        console.error(`Monitoring error for ${transactionId}:`, error);
-      }
-    }, this.config.statusPollInterval);
-
-    // Store interval for cleanup
-    if (!this.monitoringIntervals) {
-      this.monitoringIntervals = new Map();
-    }
-    this.monitoringIntervals.set(transactionId, interval);
-  }
-
-  /**
-   * Initialize status monitoring system
-   */
-  _initializeStatusMonitoring() {
-    // Set up periodic cleanup of completed transactions
-    setInterval(() => {
-      this._cleanupCompletedMonitoring();
-    }, 300000); // 5 minutes
-  }
-
-  _cleanupCompletedMonitoring() {
-    if (!this.monitoringIntervals) return;
-
-    for (const [transactionId, interval] of this.monitoringIntervals) {
-      const context = this.bridgeContext.get(transactionId);
-      if (context && context.result && 
-          (context.result.status === 'completed' || context.result.status === 'failed')) {
-        clearInterval(interval);
-        this.monitoringIntervals.delete(transactionId);
-      }
-    }
-  }
-
-  /**
-   * Enhanced route scoring algorithm
-   */
-  _calculateRouteScore(route) {
-    const feeScore = 1 / (parseFloat(route.fee) + 0.001); // Lower fee = higher score
-    const timeScore = 1 / (route.estimatedTime + 1); // Faster = higher score
-    const reliabilityScore = route.reliability || 0.8; // Default reliability
-    const securityScore = route.securityScore || 0.7; // Default security
-
-    // Weighted scoring
-    return (feeScore * 0.3) + (timeScore * 0.3) + (reliabilityScore * 0.25) + (securityScore * 0.15);
-  }
-
-  async _getProtocolReliability(protocolName) {
-    // Calculate reliability based on historical success rate
-    const protocolHistory = this.bridgeHistory.filter(tx => tx.protocol === protocolName);
-    if (protocolHistory.length === 0) return 0.8; // Default for new protocols
-
-    const successful = protocolHistory.filter(tx => tx.status === 'completed').length;
-    return successful / protocolHistory.length;
-  }
-
-  async _estimateGasCost(protocolName, chainId) {
-    // Mock gas estimation - replace with actual gas price fetching
-    const gasPrice = await this._getGasPrice(chainId);
-    const estimatedGas = 150000; // Typical bridge transaction gas
-    return ethers.formatUnits((gasPrice * BigInt(estimatedGas)).toString(), 'gwei');
-  }
-
-  async _getGasPrice(chainId) {
-    // Mock gas price - replace with actual RPC call
-    return ethers.parseUnits('20', 'gwei'); // 20 gwei
-  }
-
-  _getSecurityScore(protocolName) {
-    // Security scores based on protocol maturity and audit status
-    const securityScores = {
-      layerzero: 0.9,
-      axelar: 0.85,
-      wormhole: 0.8,
-      chainlink: 0.95,
-      hyperlane: 0.75
-    };
-    return securityScores[protocolName] || 0.7;
-  }
-
-  /**
-   * 🪪 BRIDGE CONTEXT: Persistent storage methods
-   */
-  _loadBridgeHistory() {
-    try {
-      if (typeof localStorage !== 'undefined') {
-        const stored = localStorage.getItem('trust_bridge_history');
-        return stored ? JSON.parse(stored) : [];
-      }
-      return [];
-    } catch (error) {
-      console.warn('Could not load bridge history:', error);
-      return [];
-    }
-  }
-
-  _addToBridgeHistory(transaction) {
-    this.bridgeHistory.unshift(transaction);
+  validateBridgeParams(params) {
+    const required = ['protocol', 'sourceChain', 'targetChain', 'amount', 'token'];
+    const missing = required.filter(field => !params[field]);
     
-    // Keep only last 1000 transactions
-    if (this.bridgeHistory.length > 1000) {
-      this.bridgeHistory = this.bridgeHistory.slice(0, 1000);
+    if (missing.length > 0) {
+      throw new BridgeError(`Missing required parameters: ${missing.join(', ')}`);
     }
 
-    this._saveBridgeHistory();
-  }
-
-  _saveBridgeHistory() {
-    try {
-      if (typeof localStorage !== 'undefined') {
-        localStorage.setItem('trust_bridge_history', JSON.stringify(this.bridgeHistory));
-      }
-    } catch (error) {
-      console.warn('Could not save bridge history:', error);
+    if (!this.isProtocolSupported(params.protocol)) {
+      throw new UnsupportedProtocolError(`Protocol ${params.protocol} not supported`);
     }
-  }
 
-  _saveBridgeContext(transactionId, context) {
-    try {
-      if (typeof localStorage !== 'undefined') {
-        localStorage.setItem(`trust_bridge_context_${transactionId}`, JSON.stringify(context));
-      }
-    } catch (error) {
-      console.warn('Could not save bridge context:', error);
+    if (params.sourceChain === params.targetChain) {
+      throw new BridgeError('Source and target chains cannot be the same');
     }
-  }
 
-  /**
-   * Caching methods
-   */
-  _getFromCache(key) {
-    const cached = this.cache?.get(key);
-    if (cached && Date.now() - cached.timestamp < this.config.cacheTimeout) {
-      return cached.data;
+    if (typeof params.amount !== 'bigint' && typeof params.amount !== 'number') {
+      throw new BridgeError('Amount must be a number or bigint');
     }
-    return null;
-  }
 
-  _setCache(key, data) {
-    if (!this.cache) {
-      this.cache = new Map();
+    if (params.amount <= 0) {
+      throw new BridgeError('Amount must be greater than 0');
     }
-    this.cache.set(key, {
-      data,
-      timestamp: Date.now()
-    });
+
+    // Security validations
+    if (params.recipient && !this._isValidAddress(params.recipient, params.targetChain)) {
+      throw new BridgeError('Invalid recipient address format');
+    }
+
+    if (params.slippage && (params.slippage < 0 || params.slippage > 0.1)) {
+      throw new BridgeError('Slippage must be between 0 and 10%');
+    }
+
+    if (params.deadline && params.deadline <= Date.now()) {
+      throw new BridgeError('Deadline must be in the future');
+    }
+
+    // Additional security checks
+    this._validateTokenAddress(params.token, params.sourceChain);
+    this._validateAmountSanity(params.amount, params.token);
   }
 
   /**
-   * Utility methods
+   * Check protocol support with health status
    */
-  _generateTransactionId() {
-    const timestamp = Date.now().toString(36);
-    const random = Math.random().toString(36).substr(2, 8);
-    return `bridge_${timestamp}_${random}`;
+  isProtocolSupported(protocol) {
+    if (!this.bridges.has(protocol)) {
+      return false;
+    }
+    
+    const circuitBreaker = this.circuitBreakers.get(protocol);
+    return circuitBreaker?.state !== 'OPEN';
+  }
+
+  /**
+   * Get protocol capabilities with real-time status
+   */
+  getProtocolCapabilities(protocol) {
+    if (!this.isProtocolSupported(protocol)) {
+      throw new UnsupportedProtocolError(`Protocol ${protocol} not supported or unavailable`);
+    }
+    
+    const baseCapabilities = this.protocolCapabilities.get(protocol);
+    const circuitBreaker = this.circuitBreakers.get(protocol);
+    
+    return {
+      ...baseCapabilities,
+      status: {
+        available: circuitBreaker?.state !== 'OPEN',
+        circuitBreakerState: circuitBreaker?.state,
+        lastFailure: circuitBreaker?.lastFailure,
+        failures: circuitBreaker?.failures
+      }
+    };
+  }
+
+  // ===== PRIVATE METHODS - PRODUCTION SAFEGUARDS =====
+
+  async _performSecurityChecks(params, transactionId) {
+    // Rate limiting
+    await this._checkRateLimit(params.userAddress || 'anonymous');
+    
+    // Additional security validations can be added here
+    // - AML/KYC checks
+    // - Blacklist validation
+    // - Regulatory compliance
+    
+    logger.debug('Security checks passed', { transactionId });
+  }
+
+  async _checkRateLimit(identifier) {
+    const now = Date.now();
+    const windowStart = now - this.config.rateLimitWindow;
+    
+    if (!this.rateLimitMap.has(identifier)) {
+      this.rateLimitMap.set(identifier, []);
+    }
+    
+    const requests = this.rateLimitMap.get(identifier);
+    
+    // Remove old requests outside the window
+    while (requests.length > 0 && requests[0] < windowStart) {
+      requests.shift();
+    }
+    
+    if (requests.length >= this.config.rateLimitRequests) {
+      throw new BridgeError(`Rate limit exceeded for ${identifier}`);
+    }
+    
+    requests.push(now);
+  }
+
+  async _executeWithRetry(operation, protocol, operationType) {
+    let lastError;
+    
+    for (let attempt = 1; attempt <= this.config.retryAttempts; attempt++) {
+      try {
+        const result = await this._withTimeout(operation(), this.config.timeout);
+        
+        if (attempt > 1) {
+          logger.info(`Operation succeeded on attempt ${attempt}`, { protocol, operationType });
+        }
+        
+        return result;
+        
+      } catch (error) {
+        lastError = error;
+        
+        if (attempt === this.config.retryAttempts) {
+          break;
+        }
+        
+        if (!this._isRetryableError(error)) {
+          throw error;
+        }
+        
+        const backoffTime = Math.min(
+          this.config.retryBackoffMs * Math.pow(2, attempt - 1),
+          this.config.maxRetryBackoffMs
+        );
+        
+        logger.warn(`Operation failed, retrying in ${backoffTime}ms`, {
+          protocol,
+          operationType,
+          attempt,
+          error: error.message
+        });
+        
+        await this._sleep(backoffTime);
+      }
+    }
+    
+    throw lastError;
+  }
+
+  _isRetryableError(error) {
+    const retryableCodes = ['NETWORK_ERROR', 'TIMEOUT', 'RATE_LIMITED', 'TEMPORARY_FAILURE'];
+    return retryableCodes.includes(error.code) || error.message.includes('timeout');
+  }
+
+  async _withTimeout(promise, timeoutMs, timeoutMessage = 'Operation timeout') {
+    return Promise.race([
+      promise,
+      new Promise((_, reject) => 
+        setTimeout(() => reject(new Error(timeoutMessage)), timeoutMs)
+      )
+    ]);
   }
 
   _sleep(ms) {
     return new Promise(resolve => setTimeout(resolve, ms));
   }
 
-  _getAvailableProtocols(fromChain, toChain) {
-    // Enhanced protocol availability check
-    const availableProtocols = [];
+  _handleCircuitBreaker(protocol, error) {
+    const circuitBreaker = this.circuitBreakers.get(protocol);
+    if (!circuitBreaker) return;
     
-    for (const [protocolName, protocol] of this.protocols) {
-      try {
-        const supportedChains = protocol.getSupportedChains();
-        if (supportedChains.includes(fromChain) && supportedChains.includes(toChain)) {
-          availableProtocols.push(protocolName);
-        }
-      } catch (error) {
-        console.warn(`Could not check support for ${protocolName}:`, error);
+    circuitBreaker.failures++;
+    circuitBreaker.lastFailure = Date.now();
+    
+    if (circuitBreaker.failures >= this.config.circuitBreakerThreshold) {
+      circuitBreaker.state = 'OPEN';
+      logger.error(`Circuit breaker OPENED for protocol ${protocol}`, {
+        failures: circuitBreaker.failures,
+        error: error.message
+      });
+      
+      this.emit('circuitBreakerOpen', { protocol, failures: circuitBreaker.failures });
+    }
+  }
+
+  _handleCircuitBreakerSuccess(protocol) {
+    const circuitBreaker = this.circuitBreakers.get(protocol);
+    if (!circuitBreaker) return;
+    
+    if (circuitBreaker.state === 'HALF_OPEN') {
+      circuitBreaker.state = 'CLOSED';
+      circuitBreaker.failures = 0;
+      logger.info(`Circuit breaker CLOSED for protocol ${protocol}`);
+      this.emit('circuitBreakerClosed', { protocol });
+    } else if (circuitBreaker.failures > 0) {
+      circuitBreaker.failures = Math.max(0, circuitBreaker.failures - 1);
+    }
+  }
+
+  _validateProtocolImplementation(protocol, name) {
+    const requiredMethods = ['initialize', 'estimateFee', 'executeBridge', 'getCapabilities'];
+    
+    for (const method of requiredMethods) {
+      if (typeof protocol[method] !== 'function') {
+        throw new Error(`Protocol ${name} missing required method: ${method}`);
       }
     }
+  }
 
-    return availableProtocols;
+  _validateChainSupport(capabilities, sourceChain, targetChain) {
+    if (!capabilities.supportedChains.includes(sourceChain)) {
+      throw new UnsupportedProtocolError(`Source chain ${sourceChain} not supported`);
+    }
+    
+    if (!capabilities.supportedChains.includes(targetChain)) {
+      throw new UnsupportedProtocolError(`Target chain ${targetChain} not supported`);
+    }
+  }
+
+  _validateTokenSupport(capabilities, token) {
+    if (capabilities.supportedTokens && capabilities.supportedTokens.length > 0) {
+      if (!capabilities.supportedTokens.includes(token)) {
+        throw new UnsupportedProtocolError(`Token ${token} not supported`);
+      }
+    }
+  }
+
+  _validateAmountLimits(capabilities, amount) {
+    if (capabilities.minAmount && amount < capabilities.minAmount) {
+      throw new BridgeError(`Amount below minimum: ${capabilities.minAmount}`);
+    }
+    
+    if (capabilities.maxAmount && amount > capabilities.maxAmount) {
+      throw new BridgeError(`Amount above maximum: ${capabilities.maxAmount}`);
+    }
+  }
+
+  _validateTokenAddress(token, chain) {
+    // Enhanced token address validation
+    if (!this._isValidAddress(token, chain)) {
+      throw new BridgeError(`Invalid token address for chain ${chain}`);
+    }
+  }
+
+  _validateAmountSanity(amount, token) {
+    // Sanity check for unreasonably large amounts
+    const maxSaneAmount = BigInt('1000000000000000000000000'); // 1M tokens with 18 decimals
+    if (typeof amount === 'bigint' && amount > maxSaneAmount) {
+      throw new BridgeError('Amount exceeds sanity limits');
+    }
+  }
+
+  _isValidAddress(address, chain) {
+    if (!address || typeof address !== 'string') return false;
+    
+    const validators = {
+      ethereum: /^0x[a-fA-F0-9]{40}$/,
+      polygon: /^0x[a-fA-F0-9]{40}$/,
+      bsc: /^0x[a-fA-F0-9]{40}$/,
+      avalanche: /^0x[a-fA-F0-9]{40}$/,
+      arbitrum: /^0x[a-fA-F0-9]{40}$/,
+      optimism: /^0x[a-fA-F0-9]{40}$/,
+      solana: /^[1-9A-HJ-NP-Za-km-z]{32,44}$/,
+      cosmos: /^cosmos1[qpzry9x8gf2tvdw0s3jn54khce6mua7l]{38}$/,
+      osmosis: /^osmo1[qpzry9x8gf2tvdw0s3jn54khce6mua7l]{38}$/
+    };
+    
+    const validator = validators[chain.toLowerCase()];
+    return validator ? validator.test(address) : address.length > 0;
+  }
+
+  _generateRequestId() {
+    return `req_${Date.now()}_${randomBytes(8).toString('hex')}`;
+  }
+
+  _generateTransactionId() {
+    return `tx_${Date.now()}_${randomBytes(16).toString('hex')}`;
+  }
+
+  _generateTransactionHash(params) {
+    const hashInput = JSON.stringify({
+      protocol: params.protocol,
+      sourceChain: params.sourceChain,
+      targetChain: params.targetChain,
+      amount: params.amount.toString(),
+      token: params.token,
+      recipient: params.recipient,
+      userAddress: params.userAddress
+    });
+    
+    return createHash('sha256').update(hashInput).digest('hex');
+  }
+
+  _generateNonce(userAddress) {
+    if (!this.nonceTracker.has(userAddress)) {
+      this.nonceTracker.set(userAddress, 0);
+    }
+    
+    const currentNonce = this.nonceTracker.get(userAddress);
+    this.nonceTracker.set(userAddress, currentNonce + 1);
+    
+    return currentNonce + 1;
+  }
+
+  _assessTransactionRisk(params, capabilities) {
+    let riskScore = 0;
+    const riskFactors = [];
+    
+    // Amount-based risk
+    if (capabilities.maxAmount && params.amount > capabilities.maxAmount * 0.8) {
+      riskScore += 3;
+      riskFactors.push('high_amount');
+    }
+    
+    // Chain combination risk
+    const riskyCombinations = [
+      ['ethereum', 'bsc'],
+      ['ethereum', 'polygon']
+    ];
+    
+    if (riskyCombinations.some(([src, tgt]) => 
+      params.sourceChain === src && params.targetChain === tgt)) {
+      riskScore += 2;
+      riskFactors.push('risky_chain_combination');
+    }
+    
+    // Protocol reliability
+    const circuitBreaker = this.circuitBreakers.get(params.protocol);
+    if (circuitBreaker?.failures > 0) {
+      riskScore += circuitBreaker.failures;
+      riskFactors.push('protocol_recent_failures');
+    }
+    
+    return {
+      score: Math.min(riskScore, 10),
+      level: riskScore <= 2 ? 'LOW' : riskScore <= 5 ? 'MEDIUM' : 'HIGH',
+      factors: riskFactors
+    };
+  }
+
+  _updateMetrics(protocol, amount, executionTime, success) {
+    this.metrics.bridgesExecuted++;
+    
+    if (success) {
+      this.metrics.bridgesSuccessful++;
+      this.metrics.totalVolume += BigInt(amount.toString());
+    } else {
+      this.metrics.bridgesFailed++;
+    }
+    
+    // Update average execution time
+    this.metrics.avgExecutionTime = 
+      (this.metrics.avgExecutionTime * (this.metrics.bridgesExecuted - 1) + executionTime) / 
+      this.metrics.bridgesExecuted;
+    
+    // Protocol usage tracking
+    const protocolUsage = this.metrics.protocolUsage.get(protocol) || 0;
+    this.metrics.protocolUsage.set(protocol, protocolUsage + 1);
+  }
+
+  async _monitorTransactionConfirmations(result, bridge) {
+    // Transaction confirmation monitoring implementation
+    // This would integrate with blockchain monitoring services
+    logger.debug('Starting confirmation monitoring', { transactionId: result.transactionId });
+  }
+
+  _setupHealthMonitoring() {
+    this.healthCheckTimer = setInterval(() => {
+      this._performHealthCheck();
+    }, this.config.healthCheckInterval);
+  }
+
+  _performHealthCheck() {
+    const healthStatus = {
+      timestamp: Date.now(),
+      uptime: Date.now() - this.startTime,
+      initialized: this.initialized,
+      activeBridges: this.activeBridges.size,
+      pendingTransactions: this.pendingTransactions.size,
+      protocols: {}
+    };
+    
+    for (const [protocol, circuitBreaker] of this.circuitBreakers) {
+      healthStatus.protocols[protocol] = {
+        available: circuitBreaker.state !== 'OPEN',
+        circuitBreakerState: circuitBreaker.state,
+        failures: circuitBreaker.failures
+      };
+    }
+    
+    this.emit('healthCheck', healthStatus);
+    
+    if (this.config.metricsEnabled) {
+      logger.debug('Health check completed', healthStatus);
+    }
+  }
+
+  _setupGracefulShutdown() {
+    const gracefulShutdown = async (signal) => {
+      logger.info(`Received ${signal}, initiating graceful shutdown...`);
+      await this.gracefulShutdown();
+      process.exit(0);
+    };
+    
+    process.on('SIGTERM', gracefulShutdown);
+    process.on('SIGINT', gracefulShutdown);
   }
 
   /**
-   * Cleanup method for proper resource management
+   * Get comprehensive system status
    */
-  async destroy() {
-    console.log('🧹 Cleaning up Bridge Manager...');
+  getStatus() {
+    return {
+      initialized: this.initialized,
+      uptime: Date.now() - this.startTime,
+      supportedProtocols: this.getSupportedProtocols(),
+      protocolCount: this.bridges.size,
+      activeBridges: this.activeBridges.size,
+      pendingTransactions: this.pendingTransactions.size,
+      metrics: {
+        ...this.metrics,
+        totalVolume: this.metrics.totalVolume.toString(),
+        protocolUsage: Object.fromEntries(this.metrics.protocolUsage),
+        successRate: this.metrics.bridgesExecuted > 0 ? 
+          (this.metrics.bridgesSuccessful / this.metrics.bridgesExecuted * 100).toFixed(2) + '%' : '0%'
+      },
+      circuitBreakers: Object.fromEntries(
+        Array.from(this.circuitBreakers.entries()).map(([protocol, cb]) => [
+          protocol, 
+          {
+            state: cb.state,
+            failures: cb.failures,
+            lastFailure: cb.lastFailure,
+            timeSinceLastFailure: cb.lastFailure ? Date.now() - cb.lastFailure : null
+          }
+        ])
+      ),
+      capabilities: Object.fromEntries(this.protocolCapabilities)
+    };
+  }
+
+  /**
+   * Get detailed metrics for monitoring dashboards
+   */
+  getMetrics() {
+    return {
+      ...this.metrics,
+      totalVolume: this.metrics.totalVolume.toString(),
+      protocolUsage: Object.fromEntries(this.metrics.protocolUsage),
+      successRate: this.metrics.bridgesExecuted > 0 ? 
+        this.metrics.bridgesSuccessful / this.metrics.bridgesExecuted : 0,
+      failureRate: this.metrics.bridgesExecuted > 0 ? 
+        this.metrics.bridgesFailed / this.metrics.bridgesExecuted : 0,
+      averageExecutionTimeMs: Math.round(this.metrics.avgExecutionTime),
+      timestamp: Date.now()
+    };
+  }
+
+  /**
+   * Get transaction history with filtering options
+   */
+  getTransactionHistory(options = {}) {
+    const { 
+      limit = 100, 
+      offset = 0, 
+      protocol, 
+      status, 
+      sourceChain, 
+      targetChain,
+      startTime,
+      endTime 
+    } = options;
     
-    // Clear monitoring intervals
-    if (this.monitoringIntervals) {
-      for (const interval of this.monitoringIntervals.values()) {
-        clearInterval(interval);
-      }
-      this.monitoringIntervals.clear();
+    let transactions = Array.from(this.transactionHistory.values());
+    
+    // Apply filters
+    if (protocol) {
+      transactions = transactions.filter(tx => tx.protocol === protocol);
     }
+    
+    if (status) {
+      transactions = transactions.filter(tx => tx.status === status);
+    }
+    
+    if (sourceChain) {
+      transactions = transactions.filter(tx => tx.sourceChain === sourceChain);
+    }
+    
+    if (targetChain) {
+      transactions = transactions.filter(tx => tx.targetChain === targetChain);
+    }
+    
+    if (startTime) {
+      transactions = transactions.filter(tx => tx.timestamp >= startTime);
+    }
+    
+    if (endTime) {
+      transactions = transactions.filter(tx => tx.timestamp <= endTime);
+    }
+    
+    // Sort by timestamp (newest first)
+    transactions.sort((a, b) => b.timestamp - a.timestamp);
+    
+    // Apply pagination
+    const total = transactions.length;
+    const paginatedTransactions = transactions.slice(offset, offset + limit);
+    
+    return {
+      transactions: paginatedTransactions,
+      pagination: {
+        total,
+        limit,
+        offset,
+        hasMore: offset + limit < total
+      }
+    };
+  }
 
-    // Cleanup monitoring systems
-    await this.transactionTracker?.destroy();
-    await this.statusUpdater?.destroy();
-    await this.failureHandler?.destroy();
+  /**
+   * Get pending transactions with detailed status
+   */
+  getPendingTransactions() {
+    return Array.from(this.pendingTransactions.entries()).map(([txId, txData]) => ({
+      transactionId: txId,
+      ...txData,
+      duration: Date.now() - txData.startTime
+    }));
+  }
 
-    // Clear caches and contexts
-    this.cache?.clear();
-    this.bridgeContext.clear();
+  /**
+   * Cancel pending transaction (if supported by protocol)
+   */
+  async cancelTransaction(transactionId) {
+    const pendingTx = this.pendingTransactions.get(transactionId);
+    if (!pendingTx) {
+      throw new BridgeError(`Transaction ${transactionId} not found or not pending`);
+    }
+    
+    const bridge = this.getBridge(pendingTx.params.protocol);
+    if (!bridge || typeof bridge.cancelTransaction !== 'function') {
+      throw new UnsupportedProtocolError(`Transaction cancellation not supported for protocol ${pendingTx.params.protocol}`);
+    }
+    
+    try {
+      logger.info('Cancelling transaction', { transactionId });
+      
+      const result = await bridge.cancelTransaction(transactionId);
+      
+      // Update transaction status
+      pendingTx.status = 'CANCELLED';
+      pendingTx.cancelledAt = Date.now();
+      
+      this.activeBridges.delete(transactionId);
+      this.emit('transactionCancelled', { transactionId, result });
+      
+      return result;
+      
+    } catch (error) {
+      logger.error('Transaction cancellation failed', { transactionId, error: error.message });
+      throw error;
+    }
+  }
 
-    this.isInitialized = false;
-    console.log('✅ Bridge Manager cleanup complete');
+  /**
+   * Force circuit breaker state change (admin function)
+   */
+  setCircuitBreakerState(protocol, state) {
+    if (!['OPEN', 'CLOSED', 'HALF_OPEN'].includes(state)) {
+      throw new BridgeError('Invalid circuit breaker state');
+    }
+    
+    const circuitBreaker = this.circuitBreakers.get(protocol);
+    if (!circuitBreaker) {
+      throw new UnsupportedProtocolError(`Protocol ${protocol} not found`);
+    }
+    
+    const oldState = circuitBreaker.state;
+    circuitBreaker.state = state;
+    
+    if (state === 'CLOSED') {
+      circuitBreaker.failures = 0;
+      circuitBreaker.lastFailure = null;
+    }
+    
+    logger.info(`Circuit breaker state changed for ${protocol}`, { 
+      oldState, 
+      newState: state 
+    });
+    
+    this.emit('circuitBreakerStateChanged', { protocol, oldState, newState: state });
+  }
+
+  /**
+   * Reset protocol failure count
+   */
+  resetProtocolFailures(protocol) {
+    const circuitBreaker = this.circuitBreakers.get(protocol);
+    if (!circuitBreaker) {
+      throw new UnsupportedProtocolError(`Protocol ${protocol} not found`);
+    }
+    
+    circuitBreaker.failures = 0;
+    circuitBreaker.lastFailure = null;
+    
+    logger.info(`Reset failure count for protocol ${protocol}`);
+    this.emit('protocolFailuresReset', { protocol });
+  }
+
+  /**
+   * Update protocol configuration dynamically
+   */
+  updateProtocolConfig(protocol, config) {
+    const bridge = this.bridges.get(protocol);
+    if (!bridge) {
+      throw new UnsupportedProtocolError(`Protocol ${protocol} not found`);
+    }
+    
+    if (typeof bridge.updateConfig !== 'function') {
+      throw new UnsupportedProtocolError(`Dynamic configuration not supported for protocol ${protocol}`);
+    }
+    
+    try {
+      bridge.updateConfig(config);
+      logger.info(`Protocol configuration updated`, { protocol, config });
+      this.emit('protocolConfigUpdated', { protocol, config });
+    } catch (error) {
+      logger.error('Protocol configuration update failed', { protocol, error: error.message });
+      throw error;
+    }
+  }
+
+  /**
+   * Emergency pause all bridge operations
+   */
+  emergencyPause() {
+    logger.warn('Emergency pause activated - stopping all bridge operations');
+    
+    // Set all circuit breakers to OPEN
+    for (const [protocol, circuitBreaker] of this.circuitBreakers) {
+      circuitBreaker.state = 'OPEN';
+      circuitBreaker.lastFailure = Date.now();
+    }
+    
+    this.shutdown = true;
+    this.emit('emergencyPause');
+  }
+
+  /**
+   * Resume operations after emergency pause
+   */
+  resumeOperations() {
+    logger.info('Resuming bridge operations after emergency pause');
+    
+    // Reset circuit breakers to CLOSED
+    for (const [protocol, circuitBreaker] of this.circuitBreakers) {
+      circuitBreaker.state = 'CLOSED';
+      circuitBreaker.failures = 0;
+      circuitBreaker.lastFailure = null;
+    }
+    
+    this.shutdown = false;
+    this.emit('operationsResumed');
+  }
+
+  /**
+   * Graceful shutdown with cleanup
+   */
+  async gracefulShutdown() {
+    if (this.shutdown) {
+      logger.warn('Shutdown already in progress');
+      return;
+    }
+    
+    this.shutdown = true;
+    logger.info('Initiating graceful shutdown...');
+    
+    // Stop accepting new requests
+    this.emit('shutdownStarted');
+    
+    // Clear health check timer
+    if (this.healthCheckTimer) {
+      clearInterval(this.healthCheckTimer);
+      this.healthCheckTimer = null;
+    }
+    
+    // Wait for pending transactions with timeout
+    const shutdownTimeout = 60000; // 1 minute
+    const startTime = Date.now();
+    
+    while (this.activeBridges.size > 0 && (Date.now() - startTime) < shutdownTimeout) {
+      logger.info(`Waiting for ${this.activeBridges.size} active bridges to complete...`);
+      await this._sleep(1000);
+    }
+    
+    if (this.activeBridges.size > 0) {
+      logger.warn(`Forcing shutdown with ${this.activeBridges.size} active bridges remaining`);
+    }
+    
+    // Shutdown individual protocols
+    const shutdownPromises = Array.from(this.bridges.values()).map(async (bridge) => {
+      try {
+        if (typeof bridge.shutdown === 'function') {
+          await this._withTimeout(bridge.shutdown(), 10000, 'Protocol shutdown timeout');
+        }
+      } catch (error) {
+        logger.error('Error shutting down bridge protocol:', error);
+      }
+    });
+
+    await Promise.allSettled(shutdownPromises);
+    
+    // Final cleanup
+    this.bridges.clear();
+    this.protocolCapabilities.clear();
+    this.circuitBreakers.clear();
+    this.pendingTransactions.clear();
+    this.transactionHistory.clear();
+    this.rateLimitMap.clear();
+    this.nonceTracker.clear();
+    this.activeBridges.clear();
+    
+    this.initialized = false;
+    
+    this.emit('shutdown');
+    logger.info('Graceful shutdown completed');
   }
 }
-
-// Export singleton instance with enhanced features
-export const trustBridgeManager = new BridgeManager();
-export default BridgeManager;
