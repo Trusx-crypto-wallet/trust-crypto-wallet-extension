@@ -1,42 +1,20 @@
 {
   "manifest_version": 3,
-  "name": "Trust Crypto Wallet",
+  "name": "Trust Crypto Wallet Extension",
   "short_name": "Trust Crypto Wallet",
   "version": "1.0.0",
-  "description": "Multi-chain Web3 wallet with bridge, DApp integration, and broadcast management",
-  "permissions": [
-    "storage",
-    "unlimitedStorage",
-    "activeTab",
-    "scripting",
-    "alarms",
-    "tabs",
-    "notifications"
-  ],
-  "host_permissions": [
-    "*://*.infura.io/*",
-    "*://*.alchemy.com/*",
-    "*://*.quicknode.com/*",
-    "*://*.ankr.com/*",
-    "*://*.chainlink.com/*",
-    "*://*.ethgasstation.info/*",
-    "*://*.gasnow.org/*",
-    "*://*.remix.ethereum.org/*",
-    "*://*.walletconnect.org/*",
-    "*://*.walletconnect.com/*",
-    "*://bridge.walletconnect.org/*",
-    "*://*.layerzero.network/*",
-    "*://*.wormhole.com/*",
-    "*://*.axelar.network/*",
-    "*://*.hyperlane.xyz/*",
-    "*://*.multichain.org/*",
-    "*://*.hop.exchange/*",
-    "*://*.across.to/*",
-    "*://*.uniswap.org/*"
-  ],
-  "background": {
-    "service_worker": "extension/background/background.js",
-    "type": "module"
+  "description": "Advanced crypto wallet with cross-chain bridge, token management, and smart contract deployment capabilities",
+  "author": "Trust Crypto Team",
+  "homepage_url": "https://trustcrypto.wallet",
+  "icons": {
+    "16": "public/icons/icon-16.png",
+    "19": "public/icons/icon-19.png",
+    "32": "public/icons/icon-32.png",
+    "38": "public/icons/icon-38.png",
+    "48": "public/icons/icon-48.png",
+    "64": "public/icons/icon-64.png",
+    "128": "public/icons/icon-128.png",
+    "512": "public/icons/icon-512.png"
   },
   "action": {
     "default_popup": "extension/popup/index.html",
@@ -48,44 +26,71 @@
       "38": "public/icons/icon-38.png",
       "48": "public/icons/icon-48.png",
       "64": "public/icons/icon-64.png",
-      "128": "public/icons/icon-128.png"
+      "128": "public/icons/icon-128.png",
+      "512": "public/icons/icon-512.png"
     }
   },
-  "icons": {
-    "16": "public/icons/icon-16.png",
-    "32": "public/icons/icon-32.png",
-    "48": "public/icons/icon-48.png",
-    "64": "public/icons/icon-64.png",
-    "128": "public/icons/icon-128.png",
-    "512": "public/icons/icon-512.png"
+  "background": {
+    "service_worker": "extension/background/background.js",
+    "type": "module"
   },
-  "web_accessible_resources": [
-    {
-      "resources": [
-        "public/icons/*",
-        "public/images/chains/*",
-        "public/images/bridges/*",
-        "public/images/tokens/*",
-        "public/images/dapps/*",
-        "public/favicon.png",
-        "extension/popup/index.html",
-        "extension/popup/approvals.html",
-        "extension/popup/dapp-connections.html",
-        "extension/popup/send.html",
-        "extension/popup/receive.html",
-        "extension/popup/bridge.html",
-        "extension/content-scripts/inpage.js",
-        "extension/content-scripts/web3Injector.js",
-        "extension/content-scripts/providerInjector.js",
-        "styles/popup.css",
-        "styles/components.css",
-        "styles/dapp.css",
-        "styles/approvals.css",
-        "styles/themes/light.css",
-        "styles/themes/dark.css"
-      ],
-      "matches": ["<all_urls>"]
-    }
+  "permissions": [
+    "storage",
+    "unlimitedStorage",
+    "activeTab",
+    "scripting",
+    "alarms",
+    "tabs",
+    "notifications"
+  ],
+  "host_permissions": [
+    "https://bsc-rpc.publicnode.com/*",
+    "https://bsc-testnet-rpc.publicnode.com/*",
+    "https://ethereum-rpc.publicnode.com/*",
+    "https://ethereum-sepolia-rpc.publicnode.com/*",
+    "https://polygon-bor-rpc.publicnode.com/*",
+    "https://polygon-amoy-bor-rpc.publicnode.com/*",
+    "https://avalanche-c-chain-rpc.publicnode.com/*",
+    "https://avalanche-fuji-c-chain-rpc.publicnode.com/*",
+    "https://arbitrum-one-rpc.publicnode.com/*",
+    "https://arbitrum-sepolia-rpc.publicnode.com/*",
+    "https://optimism-rpc.publicnode.com/*",
+    "https://optimism-sepolia-rpc.publicnode.com/*",
+    "https://opbnb-rpc.publicnode.com/*",
+    "https://opbnb-testnet-rpc.publicnode.com/*",
+    "*://*.infura.io/*",
+    "*://*.alchemy.com/*",
+    "*://*.quicknode.com/*",
+    "*://*.ankr.com/*",
+    "*://*.chainlink.com/*",
+    "*://*.ethgasstation.info/*",
+    "*://*.gasnow.org/*",
+    "*://*.walletconnect.org/*",
+    "*://*.walletconnect.com/*",
+    "*://bridge.walletconnect.org/*",
+    "*://*.layerzero.network/*",
+    "*://*.wormhole.com/*",
+    "*://*.axelar.network/*",
+    "*://*.hyperlane.xyz/*",
+    "*://*.hop.exchange/*",
+    "*://*.across.to/*",
+    "*://*.uniswap.org/*",
+    "*://*.coingecko.com/*",
+    "*://*.coinmarketcap.com/*",
+    "*://*.etherscan.io/*",
+    "*://*.bscscan.com/*",
+    "*://*.polygonscan.com/*",
+    "*://*.arbiscan.io/*",
+    "*://*.optimistic.etherscan.io/*",
+    "*://*.snowtrace.io/*"
+  ],
+  "optional_permissions": [
+    "clipboardWrite",
+    "clipboardRead"
+  ],
+  "optional_host_permissions": [
+    "*://*.ethereum.org/*",
+    "*://*.remix.ethereum.org/*"
   ],
   "content_scripts": [
     {
@@ -93,18 +98,29 @@
       "js": [
         "extension/content-scripts/contentScript.js",
         "extension/content-scripts/detector.js",
-        "extension/content-scripts/web3Injector.js",
-        "extension/content-scripts/providerInjector.js",
         "extension/content-scripts/messageRelay.js",
-        "extension/content-scripts/dappBridge.js"
+        "extension/content-scripts/dappBridge.js",
+        "extension/content-scripts/bridgeDetector.js",
+        "extension/content-scripts/deploymentDetector.js",
+        "extension/content-scripts/contractDetector.js"
       ],
       "run_at": "document_start",
       "all_frames": true
     },
     {
-      "matches": ["*://*.remix.ethereum.org/*"],
+      "matches": ["*://remix.ethereum.org/*", "*://remix-ide.readthedocs.io/*"],
       "js": ["extension/content-scripts/remixDetector.js"],
-      "run_at": "document_start"
+      "run_at": "document_idle"
+    },
+    {
+      "matches": ["<all_urls>"],
+      "js": [
+        "extension/content-scripts/inpage.js",
+        "extension/content-scripts/web3Injector.js",
+        "extension/content-scripts/providerInjector.js"
+      ],
+      "run_at": "document_start",
+      "world": "MAIN"
     },
     {
       "matches": ["*://*.uniswap.org/*"],
@@ -112,19 +128,36 @@
       "run_at": "document_start"
     }
   ],
+  "web_accessible_resources": [
+    {
+      "resources": [
+        "config/*.js",
+        "config/**/*.js",
+        "src/bridges/abis/**/*.json",
+        "src/contracts/templates/**/*.sol",
+        "public/images/**/*",
+        "public/favicon.png",
+        "styles/*.css",
+        "extension/popup/*.html",
+        "extension/content-scripts/*.js"
+      ],
+      "matches": ["<all_urls>"]
+    }
+  ],
   "externally_connectable": {
     "matches": [
-      "*://*.remix.ethereum.org/*",
+      "*://localhost:*/*",
+      "*://127.0.0.1:*/*",
       "*://*.walletconnect.org/*",
-      "*://*.walletconnect.com/*"
+      "*://*.walletconnect.com/*",
+      "*://remix.ethereum.org/*",
+      "*://*.uniswap.org/*"
     ]
   },
-  "optional_permissions": [
-    "background",
-    "clipboardWrite",
-    "clipboardRead"
-  ],
-  "optional_host_permissions": [
-    "*://*.ethereum.org/*"
-  ]
+  "content_security_policy": {
+    "extension_pages": "script-src 'self' 'wasm-unsafe-eval'; object-src 'self'; connect-src *; img-src 'self' data: https:; style-src 'self' 'unsafe-inline';"
+  },
+  "minimum_chrome_version": "88",
+  "update_url": "https://raw.githubusercontent.com/Trusx-crypto-wallet/trust-crypto-wallet-extension/master/updates.xml",
+  "homepage_url": "https://github.com/Trusx-crypto-wallet/trust-crypto-wallet-extension"
 }
