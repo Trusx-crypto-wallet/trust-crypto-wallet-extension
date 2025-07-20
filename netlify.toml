@@ -1,21 +1,250 @@
 [build]
-  command   = "npm run build:web"
-  publish   = ".next"
-  functions = "api"
-
-[build.environment]
-  # Node runtime
-  NODE_VERSION = "20.16.0"
-  # Give Node a bit more memory
-  NODE_OPTIONS = "--max-old-space-size=8192"
-
-  # UI formatting flags (publicly exposed to your Next.js code)
-  NEXT_PUBLIC_DECIMAL_PLACES_TOKEN   = "6"
-  NEXT_PUBLIC_DECIMAL_PLACES_USD     = "2"
-  NEXT_PUBLIC_SHOW_FULL_PRECISION    = "false"
-  NEXT_PUBLIC_USE_COMMA_SEPARATOR    = "true"
-  NEXT_PUBLIC_DESKTOP_FORMAT         = "full"
+  publish = ".next"
+  command = "npm run build"
+  
+  # Build environment
+  environment = { NODE_VERSION = "18.17.0", NPM_VERSION = "9.6.7" }
 
 [build.processing]
-  # keep Netlify from stripping your Next.js cache
   skip_processing = false
+
+[build.processing.css]
+  bundle = true
+  minify = true
+
+[build.processing.js]
+  bundle = true
+  minify = true
+
+[build.processing.html]
+  pretty_urls = true
+
+[build.processing.images]
+  compress = true
+
+# Headers for security and performance
+[[headers]]
+  for = "/*"
+  [headers.values]
+    X-Frame-Options = "DENY"
+    X-XSS-Protection = "1; mode=block"
+    X-Content-Type-Options = "nosniff"
+    Referrer-Policy = "strict-origin-when-cross-origin"
+    Permissions-Policy = "camera=(), microphone=(), geolocation=(), interest-cohort=()"
+
+[[headers]]
+  for = "/api/*"
+  [headers.values]
+    Access-Control-Allow-Origin = "https://trustcryptowallet.netlify.app"
+    Access-Control-Allow-Methods = "GET, POST, PUT, DELETE, OPTIONS"
+    Access-Control-Allow-Headers = "Content-Type, Authorization, X-Requested-With"
+    Access-Control-Max-Age = "86400"
+
+# Price API CORS headers
+[[headers]]
+  for = "/*"
+  [headers.values]
+    Content-Security-Policy = "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://unpkg.com https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: https:; connect-src 'self' wss: https: https://*.chainlink.com https://*.uniswap.org https://api.thegraph.com https://*.cryptocompare.com https://api.pancakeswap.info https://api.sushi.com; worker-src 'self' blob:; child-src 'self' blob:; object-src 'none'; base-uri 'self'; form-action 'self'"
+
+[[headers]]
+  for = "*.js"
+  [headers.values]
+    Cache-Control = "public, max-age=31536000, immutable"
+
+[[headers]]
+  for = "*.css"
+  [headers.values]
+    Cache-Control = "public, max-age=31536000, immutable"
+
+[[headers]]
+  for = "*.png"
+  [headers.values]
+    Cache-Control = "public, max-age=31536000, immutable"
+
+[[headers]]
+  for = "*.jpg"
+  [headers.values]
+    Cache-Control = "public, max-age=31536000, immutable"
+
+[[headers]]
+  for = "*.gif"
+  [headers.values]
+    Cache-Control = "public, max-age=31536000, immutable"
+
+[[headers]]
+  for = "*.svg"
+  [headers.values]
+    Cache-Control = "public, max-age=31536000, immutable"
+
+[[headers]]
+  for = "*.woff"
+  [headers.values]
+    Cache-Control = "public, max-age=31536000, immutable"
+
+[[headers]]
+  for = "*.woff2"
+  [headers.values]
+    Cache-Control = "public, max-age=31536000, immutable"
+
+# Redirects for SPA routing
+[[redirects]]
+  from = "/wallet/*"
+  to = "/"
+  status = 200
+
+[[redirects]]
+  from = "/swap"
+  to = "/swap"
+  status = 200
+
+[[redirects]]
+  from = "/bridge"
+  to = "/bridge"
+  status = 200
+
+[[redirects]]
+  from = "/send"
+  to = "/send"
+  status = 200
+
+[[redirects]]
+  from = "/receive"
+  to = "/receive"
+  status = 200
+
+[[redirects]]
+  from = "/settings"
+  to = "/settings"
+  status = 200
+
+[[redirects]]
+  from = "/admin-settings"
+  to = "/admin-settings"
+  status = 200
+
+[[redirects]]
+  from = "/dapp-connections"
+  to = "/dapp-connections"
+  status = 200
+
+[[redirects]]
+  from = "/walletconnect"
+  to = "/walletconnect"
+  status = 200
+
+[[redirects]]
+  from = "/approvals"
+  to = "/approvals"
+  status = 200
+
+[[redirects]]
+  from = "/broadcast-status"
+  to = "/broadcast-status"
+  status = 200
+
+[[redirects]]
+  from = "/deploy"
+  to = "/deploy"
+  status = 200
+
+[[redirects]]
+  from = "/contract-creator"
+  to = "/contract-creator"
+  status = 200
+
+[[redirects]]
+  from = "/template-library"
+  to = "/template-library"
+  status = 200
+
+[[redirects]]
+  from = "/deployed-contracts"
+  to = "/deployed-contracts"
+  status = 200
+
+[[redirects]]
+  from = "/contract-editor"
+  to = "/contract-editor"
+  status = 200
+
+[[redirects]]
+  from = "/deployment-history"
+  to = "/deployment-history"
+  status = 200
+
+# API redirects
+[[redirects]]
+  from = "/api/v1/*"
+  to = "/api/:splat"
+  status = 200
+
+# Fallback for 404s
+[[redirects]]
+  from = "/*"
+  to = "/404"
+  status = 404
+
+# Environment variables (will be overridden by actual env vars)
+[context.production.environment]
+  NODE_ENV = "production"
+  NEXT_PUBLIC_ENVIRONMENT = "production"
+  NEXT_PUBLIC_API_URL = "https://trustcryptowallet.netlify.app"
+
+[context.deploy-preview.environment]
+  NODE_ENV = "development"
+  NEXT_PUBLIC_ENVIRONMENT = "preview"
+  NEXT_PUBLIC_API_URL = "https://deploy-preview-$REVIEW_ID--trustcryptowallet.netlify.app"
+
+[context.branch-deploy.environment]
+  NODE_ENV = "development"
+  NEXT_PUBLIC_ENVIRONMENT = "development"
+
+# Functions configuration
+[functions]
+  directory = "netlify/functions"
+  node_bundler = "esbuild"
+
+# Forms configuration
+[forms]
+  spam_protection = true
+
+# Large Media configuration
+[large_media]
+  git_lfs = true
+
+# Split testing
+[split_testing]
+  [[split_testing.experiments]]
+    name = "ui_version"
+    buckets = [
+      { name = "original", percentage = 50 },
+      { name = "v2", percentage = 50 }
+    ]
+
+# Plugin configuration
+[[plugins]]
+  package = "@netlify/plugin-nextjs"
+
+[[plugins]]
+  package = "netlify-plugin-cache"
+  [plugins.inputs]
+    paths = ["node_modules", ".next/cache"]
+
+[[plugins]]
+  package = "netlify-plugin-lighthouse"
+  [plugins.inputs]
+    audit_url = "/"
+
+# Edge handlers
+[[edge_handlers]]
+  handler = "geolocation"
+  pattern = "/api/geolocation"
+
+# Security configurations
+[security]
+  referrer_policy = "strict-origin-when-cross-origin"
+  content_security_policy = "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://unpkg.com https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: https:; connect-src 'self' wss: https:; worker-src 'self' blob:; child-src 'self' blob:; object-src 'none'; base-uri 'self'; form-action 'self'"
+
+# Serverless functions timeout
+[functions."*"]
+  timeout = 30
