@@ -1,5 +1,5 @@
 /**
- * Trust Wallet Extension - Token Configuration
+ * Trust Crypto Wallet Extension - Token Configuration
  * Production-grade token configuration with Unified Trust Crypto Wallet Token List
  * Integrates extension.json, tokenlist.json, and testnet.json with TokenListAligner
  */
@@ -8,7 +8,7 @@ import { logger } from '../src/utils/logger.js';
 import { BridgeErrors } from '../src/errors/BridgeErrors.js';
 
 /**
- * Token configuration class with extension-guided URL loading
+ * Token configuration class with extension-guided URL loading for Trust Crypto Wallet Extension
  */
 export class TokenConfig {
     constructor() {
@@ -29,13 +29,13 @@ export class TokenConfig {
     }
 
     /**
-     * Initialize token configuration with extension-guided loading
+     * Initialize token configuration with extension-guided loading and Bitcoin filtering
      * @returns {Promise<void>}
      */
     async initialize() {
         try {
             const startTime = Date.now();
-            logger.info('Initializing token configuration with TokenListAligner integration...');
+            logger.info('🚀 Initializing BITCOIN-FREE token configuration for Trust Crypto Wallet Extension with TokenListAligner integration...');
             
             // Step 1: Load extension metadata first
             await this.loadExtensionMetadata();
@@ -43,26 +43,223 @@ export class TokenConfig {
             // Step 2: Extract URLs from extension
             this.extractTokenListUrls();
             
-            // Step 3: Load actual token data
-            await this.loadTokenData();
+            // Step 3: Load actual token data with Bitcoin filtering
+            await this.loadTokenDataWithFiltering();
             
-            // Step 4: Validate against extension expectations
+            // Step 4: Strict validation against extension expectations + Bitcoin filtering
             await this.validateTokenData();
             
+            // Step 5: Final Bitcoin verification
+            await this.performFinalBitcoinCheck();
+            
             const loadTime = Date.now() - startTime;
-            logger.info(`Token configuration initialized in ${loadTime}ms`);
+            logger.info(`✅ BITCOIN-FREE token configuration initialized in ${loadTime}ms`);
             
             if (loadTime > 200) {
-                logger.warn(`Load time ${loadTime}ms exceeds target <200ms`);
+                logger.warn(`⚠️  Load time ${loadTime}ms exceeds target <200ms`);
             }
             
             this.initialized = true;
             this.lastUpdated = new Date().toISOString();
 
         } catch (error) {
-            logger.error('Failed to initialize token configuration:', error);
+            logger.error('❌ Failed to initialize token configuration:', error);
+            logger.warn('🔄 Falling back to Bitcoin-free hardcoded configuration...');
             await this.initializeFallback();
         }
+    }
+
+    /**
+     * Load token data with comprehensive Bitcoin filtering
+     * @returns {Promise<void>}
+     */
+    async loadTokenDataWithFiltering() {
+        logger.info('🔍 Loading token data with STRICT Bitcoin filtering...');
+        
+        const loadPromises = [];
+
+        // Load mainnet tokens with filtering
+        if (this.urlConfig.mainnet) {
+            loadPromises.push(
+                this.loadMainnetTokens().catch(error => {
+                    logger.error('❌ Failed to load mainnet tokens:', error);
+                    return null;
+                })
+            );
+        }
+
+        // Load testnet tokens with filtering
+        if (this.urlConfig.testnet) {
+            loadPromises.push(
+                this.loadTestnetTokens().catch(error => {
+                    logger.error('❌ Failed to load testnet tokens:', error);
+                    return null;
+                })
+            );
+        }
+
+        await Promise.all(loadPromises);
+        
+        logger.info(`📊 Token loading complete: ${this.mainnetTokens.size} mainnet, ${this.testnetTokens.size} testnet`);
+    }
+
+    /**
+     * Perform final Bitcoin verification check
+     * @returns {Promise<void>}
+     */
+    async performFinalBitcoinCheck() {
+        logger.info('🔍 Performing final Bitcoin verification check...');
+        
+        const bitcoinTokens = this.findBitcoinTokens();
+        const supportedChains = this.getSupportedChainIds(true);
+        
+        // Check for Bitcoin chain ID
+        if (supportedChains.includes(0)) {
+            throw new Error('CRITICAL: Bitcoin chain ID (0) found in supported chains');
+        }
+        
+        // Check for Bitcoin tokens
+        if (bitcoinTokens.length > 0) {
+            throw new Error(`CRITICAL: ${bitcoinTokens.length} Bitcoin tokens found after filtering`);
+        }
+        
+        // Check for Bitcoin-related logos in cache
+        const bitcoinLogos = this.findBitcoinLogosInCache();
+        if (bitcoinLogos.length > 0) {
+            logger.warn(`⚠️  Bitcoin logos found in cache: ${bitcoinLogos.join(', ')}`);
+        }
+        
+        logger.info('✅ Bitcoin verification passed: System is Bitcoin-free');
+    }
+
+    /**
+     * Find Bitcoin-related logos in cache
+     * @returns {Array<string>}
+     */
+    findBitcoinLogosInCache() {
+        const bitcoinLogos = [];
+        
+        for (const [key, data] of this.cache) {
+            if (key.toLowerCase().includes('btc') || 
+                key.toLowerCase().includes('bitcoin') ||
+                (data.data && JSON.stringify(data.data).toLowerCase().includes('btc'))) {
+                bitcoinLogos.push(key);
+            }
+        }
+        
+        return bitcoinLogos;
+    }
+
+    /**
+     * Get Bitcoin-free token configuration for production deployment
+     * @returns {Object}
+     */
+    getProductionTokenConfig() {
+        if (!this.initialized) {
+            throw new BridgeErrors.NotInitializedError('Token configuration not initialized');
+        }
+
+        // Final Bitcoin check before returning production config
+        const bitcoinTokens = this.findBitcoinTokens();
+        if (bitcoinTokens.length > 0) {
+            throw new Error(`PRODUCTION SAFETY: ${bitcoinTokens.length} Bitcoin tokens detected`);
+        }
+
+        return {
+            extension: {
+                ...this.extensionData,
+                bitcoinFiltered: true,
+                filteringApplied: {
+                    bitcoinTokens: true,
+                    deprecatedTestnets: true,
+                    invalidChainIds: true
+                }
+            },
+            mainnetTokens: Object.fromEntries(this.mainnetTokens),
+            testnetTokens: Object.fromEntries(this.testnetTokens),
+            bridgeTokens: Object.fromEntries(this.bridgeTokens),
+            tokenMappings: Object.fromEntries(
+                Array.from(this.tokenMappings.entries()).map(([chainId, tokens]) => [
+                    chainId,
+                    Object.fromEntries(tokens)
+                ])
+            ),
+            statistics: this.getStatistics(),
+            urls: {
+                extension: this.urlConfig.extension,
+                mainnet: this.urlConfig.mainnet,
+                testnet: this.urlConfig.testnet
+            },
+            productionSafety: {
+                bitcoinFiltered: true,
+                bitcoinTokensFound: bitcoinTokens.length,
+                supportedChains: this.getSupportedChainIds(true),
+                excludedChains: [0, 5, 80001, 421613, 420],
+                lastValidated: new Date().toISOString()
+            },
+            lastUpdated: this.lastUpdated
+        };
+    }
+
+    /**
+     * Validate production readiness
+     * @returns {Object}
+     */
+    validateProductionReadiness() {
+        const validation = {
+            isProductionReady: false,
+            issues: [],
+            warnings: [],
+            bitcoinCheck: {
+                passed: false,
+                bitcoinTokensFound: 0,
+                bitcoinChainsFound: []
+            }
+        };
+
+        // Check initialization
+        if (!this.initialized) {
+            validation.issues.push('Token configuration not initialized');
+            return validation;
+        }
+
+        // Bitcoin validation
+        const bitcoinTokens = this.findBitcoinTokens();
+        const supportedChains = this.getSupportedChainIds(true);
+        const bitcoinChains = supportedChains.filter(chainId => chainId === 0);
+
+        validation.bitcoinCheck.bitcoinTokensFound = bitcoinTokens.length;
+        validation.bitcoinCheck.bitcoinChainsFound = bitcoinChains;
+
+        if (bitcoinTokens.length > 0) {
+            validation.issues.push(`${bitcoinTokens.length} Bitcoin tokens found`);
+        }
+
+        if (bitcoinChains.length > 0) {
+            validation.issues.push(`Bitcoin chain IDs found: ${bitcoinChains.join(', ')}`);
+        }
+
+        validation.bitcoinCheck.passed = bitcoinTokens.length === 0 && bitcoinChains.length === 0;
+
+        // Check token counts
+        if (this.mainnetTokens.size === 0) {
+            validation.issues.push('No mainnet tokens loaded');
+        }
+
+        // Check URLs accessibility
+        if (!this.urlConfig.mainnet || !this.urlConfig.extension) {
+            validation.issues.push('Missing required URLs');
+        }
+
+        // Warnings for sub-optimal conditions
+        if (this.cache.size > 1000) {
+            validation.warnings.push('Cache size is very large');
+        }
+
+        // Final determination
+        validation.isProductionReady = validation.issues.length === 0 && validation.bitcoinCheck.passed;
+
+        return validation;
     }
 
     /**
@@ -220,57 +417,6 @@ export class TokenConfig {
         }
 
         logger.info(`Testnet tokens loaded: ${processedCount} processed, ${filteredCount} filtered out (Bitcoin + deprecated)`);
-    }
-
-    /**
-     * Enhanced Bitcoin detection with comprehensive filtering
-     * @param {Object} token 
-     * @returns {boolean}
-     */
-    isBitcoinRelatedToken(token) {
-        // 1. Filter by symbol (comprehensive list)
-        const bitcoinSymbols = [
-            'BTC', 'WBTC', 'BTCB', 'HBTC', 'RENBTC', 'SBTC', 
-            'TBTC', 'OBTC', 'PBTC', 'VBTC', 'XBTC'
-        ];
-        if (bitcoinSymbols.includes(token.symbol?.toUpperCase())) {
-            return true;
-        }
-
-        // 2. Filter by name (case-insensitive)
-        const bitcoinNamePatterns = [
-            'bitcoin', 'wrapped bitcoin', 'synthetic bitcoin', 
-            'tokenized bitcoin', 'bitcoin token'
-        ];
-        const tokenNameLower = token.name?.toLowerCase() || '';
-        if (bitcoinNamePatterns.some(pattern => tokenNameLower.includes(pattern))) {
-            return true;
-        }
-
-        // 3. Filter by chainId (Bitcoin networks)
-        const bitcoinChainIds = [0]; // Bitcoin mainnet uses chainId: 0
-        if (bitcoinChainIds.includes(token.chainId)) {
-            return true;
-        }
-
-        // 4. Filter by logo URI containing bitcoin references
-        const logoURI = token.logoURI?.toLowerCase() || '';
-        const bitcoinLogoPatterns = ['btc', 'bitcoin', 'wbtc'];
-        if (bitcoinLogoPatterns.some(pattern => logoURI.includes(pattern))) {
-            return true;
-        }
-
-        // 5. Filter by address patterns (known Bitcoin token addresses)
-        const knownBitcoinAddresses = [
-            '0x2260FAC5E5542a773Aa44fBCfeDf7C193bc2C599', // WBTC on Ethereum
-            '0x7130d2A12B9BCbFAe4f2634d864A1Ee1Ce3Ead9c', // BTCB on BSC
-            '0x1BFD67037B42Cf73acF2047067bd4F2C47D9BfD6'  // WBTC on Polygon
-        ];
-        if (knownBitcoinAddresses.includes(token.address)) {
-            return true;
-        }
-
-        return false;
     }
 
     /**
@@ -444,30 +590,50 @@ export class TokenConfig {
     }
 
     /**
-     * Check if token is Bitcoin-related and should be filtered out
+     * Enhanced Bitcoin detection with comprehensive filtering (5-tier system)
      * @param {Object} token 
      * @returns {boolean}
      */
     isBitcoinRelatedToken(token) {
-        // Filter by symbol
-        const bitcoinSymbols = ['BTC', 'WBTC', 'BTCB'];
+        // 1. Filter by symbol (comprehensive list)
+        const bitcoinSymbols = [
+            'BTC', 'WBTC', 'BTCB', 'HBTC', 'RENBTC', 'SBTC', 
+            'TBTC', 'OBTC', 'PBTC', 'VBTC', 'XBTC'
+        ];
         if (bitcoinSymbols.includes(token.symbol?.toUpperCase())) {
             return true;
         }
 
-        // Filter by name
-        if (token.name?.toLowerCase().includes('bitcoin')) {
+        // 2. Filter by name (case-insensitive)
+        const bitcoinNamePatterns = [
+            'bitcoin', 'wrapped bitcoin', 'synthetic bitcoin', 
+            'tokenized bitcoin', 'bitcoin token'
+        ];
+        const tokenNameLower = token.name?.toLowerCase() || '';
+        if (bitcoinNamePatterns.some(pattern => tokenNameLower.includes(pattern))) {
             return true;
         }
 
-        // Filter by chainId (Bitcoin networks)
-        if (token.chainId === 0) {
+        // 3. Filter by chainId (Bitcoin networks)
+        const bitcoinChainIds = [0]; // Bitcoin mainnet uses chainId: 0
+        if (bitcoinChainIds.includes(token.chainId)) {
             return true;
         }
 
-        // Filter by logo URI containing bitcoin references
-        if (token.logoURI?.toLowerCase().includes('btc') || 
-            token.logoURI?.toLowerCase().includes('bitcoin')) {
+        // 4. Filter by logo URI containing bitcoin references
+        const logoURI = token.logoURI?.toLowerCase() || '';
+        const bitcoinLogoPatterns = ['btc', 'bitcoin', 'wbtc'];
+        if (bitcoinLogoPatterns.some(pattern => logoURI.includes(pattern))) {
+            return true;
+        }
+
+        // 5. Filter by address patterns (known Bitcoin token addresses)
+        const knownBitcoinAddresses = [
+            '0x2260FAC5E5542a773Aa44fBCfeDf7C193bc2C599', // WBTC on Ethereum
+            '0x7130d2A12B9BCbFAe4f2634d864A1Ee1Ce3Ead9c', // BTCB on BSC
+            '0x1BFD67037B42Cf73acF2047067bd4F2C47D9BfD6'  // WBTC on Polygon
+        ];
+        if (knownBitcoinAddresses.includes(token.address)) {
             return true;
         }
 
@@ -695,7 +861,7 @@ export class TokenConfig {
         // Create minimal extension data
         this.extensionData = {
             version: '2.1.0',
-            name: 'Trust Crypto Wallet Token List',
+            name: 'Trust Crypto Wallet Extension Token List',
             tokenCount: fallbackMainnetTokens.length,
             bridgeCount: 0,
             lists: {
