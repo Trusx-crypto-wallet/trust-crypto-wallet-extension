@@ -1,593 +1,689 @@
 /**
- * Trust Crypto Wallet - Chain Configuration
- * Production-ready chain metadata for multi-chain wallet
- * 
- * File: config/chainsconfig.js
- * Compatible with: config/bridgeconfig.js
- * Last updated: 2025-07-17
+ * Trust Crypto Wallet Extension - Chain Configuration
+ * Production-grade network configuration using Token List Extension data
+ * Supports mainnet and testnet with fallback RPC endpoints
  */
 
-'use strict';
+import { logger } from '../src/utils/logger.js';
+import { BridgeErrors } from '../src/errors/BridgeErrors.js';
 
-// ------------------------------------------------------------
-// Chain IDs – Production mainnet and testnet IDs
-// ------------------------------------------------------------
-const CHAIN_IDS = Object.freeze({
-  // Mainnets
-  ETHEREUM:        1,
-  POLYGON:         137,
-  BSC:             56,
-  ARBITRUM:        42161,
-  AVALANCHE:       43114,
-  OPTIMISM:        10,
-
-  // Testnets
-  ETHEREUM_SEPOLIA:   11155111,
-  ARBITRUM_SEPOLIA:   421614,
-  OPTIMISM_SEPOLIA:   11155420,
-  BSC_TESTNET:        97,
-  AVALANCHE_FUJI:     43113,
-  POLYGON_AMOY:       80002
-});
-
-// ------------------------------------------------------------
-// Production RPC endpoints with fallbacks
-// ------------------------------------------------------------
-const RPC_CONFIGS = {
-  // Mainnet RPCs - Production grade with multiple fallbacks
-  ethereum: {
-    rpcUrls: [
-      'https://ethereum-rpc.publicnode.com',
-      'https://eth.llamarpc.com',
-      'https://ethereum.blockpi.network/v1/rpc/public',
-      'https://rpc.ankr.com/eth'
-    ],
-    blockExplorerUrls: ['https://etherscan.io'],
-    websocketUrls: ['wss://ethereum-rpc.publicnode.com']
-  },
-  polygon: {
-    rpcUrls: [
-      'https://polygon-bor-rpc.publicnode.com',
-      'https://polygon.llamarpc.com',
-      'https://polygon.blockpi.network/v1/rpc/public',
-      'https://rpc.ankr.com/polygon'
-    ],
-    blockExplorerUrls: ['https://polygonscan.com'],
-    websocketUrls: ['wss://polygon-bor-rpc.publicnode.com']
-  },
-  bsc: {
-    rpcUrls: [
-      'https://bsc-rpc.publicnode.com',
-      'https://binance.llamarpc.com',
-      'https://bsc.blockpi.network/v1/rpc/public',
-      'https://rpc.ankr.com/bsc'
-    ],
-    blockExplorerUrls: ['https://bscscan.com'],
-    websocketUrls: ['wss://bsc-rpc.publicnode.com']
-  },
-  arbitrum: {
-    rpcUrls: [
-      'https://arbitrum-one-rpc.publicnode.com',
-      'https://arbitrum.llamarpc.com',
-      'https://arbitrum.blockpi.network/v1/rpc/public',
-      'https://rpc.ankr.com/arbitrum'
-    ],
-    blockExplorerUrls: ['https://arbiscan.io'],
-    websocketUrls: ['wss://arbitrum-one-rpc.publicnode.com']
-  },
-  avalanche: {
-    rpcUrls: [
-      'https://avalanche-c-chain-rpc.publicnode.com',
-      'https://avalanche.blockpi.network/v1/rpc/public',
-      'https://rpc.ankr.com/avalanche',
-      'https://avax.meowrpc.com'
-    ],
-    blockExplorerUrls: ['https://snowtrace.io'],
-    websocketUrls: ['wss://avalanche-c-chain-rpc.publicnode.com']
-  },
-  optimism: {
-    rpcUrls: [
-      'https://optimism-rpc.publicnode.com',
-      'https://optimism.llamarpc.com',
-      'https://optimism.blockpi.network/v1/rpc/public',
-      'https://rpc.ankr.com/optimism'
-    ],
-    blockExplorerUrls: ['https://optimistic.etherscan.io'],
-    websocketUrls: ['wss://optimism-rpc.publicnode.com']
-  },
-  
-  // Testnet RPCs - For development and testing
-  sepolia: {
-    rpcUrls: [
-      'https://ethereum-sepolia-rpc.publicnode.com',
-      'https://sepolia.blockpi.network/v1/rpc/public',
-      'https://rpc.sepolia.org',
-      'https://rpc2.sepolia.org'
-    ],
-    blockExplorerUrls: ['https://sepolia.etherscan.io'],
-    websocketUrls: ['wss://ethereum-sepolia-rpc.publicnode.com']
-  },
-  arbitrumSepolia: {
-    rpcUrls: [
-      'https://arbitrum-sepolia-rpc.publicnode.com',
-      'https://arbitrum-sepolia.blockpi.network/v1/rpc/public',
-      'https://sepolia-rollup.arbitrum.io/rpc'
-    ],
-    blockExplorerUrls: ['https://sepolia.arbiscan.io'],
-    websocketUrls: ['wss://arbitrum-sepolia-rpc.publicnode.com']
-  },
-  optimismSepolia: {
-    rpcUrls: [
-      'https://optimism-sepolia-rpc.publicnode.com',
-      'https://optimism-sepolia.blockpi.network/v1/rpc/public',
-      'https://sepolia.optimism.io'
-    ],
-    blockExplorerUrls: ['https://sepolia-optimism.etherscan.io'],
-    websocketUrls: ['wss://optimism-sepolia-rpc.publicnode.com']
-  },
-  bscTestnet: {
-    rpcUrls: [
-      'https://bsc-testnet-rpc.publicnode.com',
-      'https://data-seed-prebsc-1-s1.binance.org:8545',
-      'https://data-seed-prebsc-2-s1.binance.org:8545'
-    ],
-    blockExplorerUrls: ['https://testnet.bscscan.com'],
-    websocketUrls: ['wss://bsc-testnet-rpc.publicnode.com']
-  },
-  avalancheFuji: {
-    rpcUrls: [
-      'https://avalanche-fuji-c-chain-rpc.publicnode.com',
-      'https://avalanche-fuji.blockpi.network/v1/rpc/public',
-      'https://api.avax-test.network/ext/bc/C/rpc'
-    ],
-    blockExplorerUrls: ['https://testnet.snowtrace.io'],
-    websocketUrls: ['wss://avalanche-fuji-c-chain-rpc.publicnode.com']
-  },
-  polygonAmoy: {
-    rpcUrls: [
-      'https://polygon-amoy-bor-rpc.publicnode.com',
-      'https://polygon-amoy.blockpi.network/v1/rpc/public',
-      'https://rpc-amoy.polygon.technology'
-    ],
-    blockExplorerUrls: ['https://amoy.polygonscan.com'],
-    websocketUrls: ['wss://polygon-amoy-bor-rpc.publicnode.com']
-  }
-};
-
-// ------------------------------------------------------------
-// Native currency configurations
-// ------------------------------------------------------------
-const NATIVE_CURRENCIES = {
-  ethereum: { name: 'Ether', symbol: 'ETH', decimals: 18 },
-  polygon: { name: 'Polygon', symbol: 'MATIC', decimals: 18 },
-  bsc: { name: 'Binance Coin', symbol: 'BNB', decimals: 18 },
-  arbitrum: { name: 'Ether', symbol: 'ETH', decimals: 18 },
-  avalanche: { name: 'Avalanche', symbol: 'AVAX', decimals: 18 },
-  optimism: { name: 'Ether', symbol: 'ETH', decimals: 18 },
-  sepolia: { name: 'Sepolia Ether', symbol: 'ETH', decimals: 18 },
-  arbitrumSepolia: { name: 'Sepolia Ether', symbol: 'ETH', decimals: 18 },
-  optimismSepolia: { name: 'Sepolia Ether', symbol: 'ETH', decimals: 18 },
-  bscTestnet: { name: 'Test BNB', symbol: 'tBNB', decimals: 18 },
-  avalancheFuji: { name: 'Avalanche', symbol: 'AVAX', decimals: 18 },
-  polygonAmoy: { name: 'Polygon', symbol: 'MATIC', decimals: 18 }
-};
-
-// ------------------------------------------------------------
-// Production gas configurations
-// ------------------------------------------------------------
-const GAS_SETTINGS = {
-  ethereum: {
-    gasLimit: 21000,
-    maxFeePerGas: '20000000000', // 20 gwei
-    maxPriorityFeePerGas: '2000000000', // 2 gwei
-    eip1559: true
-  },
-  polygon: {
-    gasLimit: 21000,
-    maxFeePerGas: '40000000000', // 40 gwei
-    maxPriorityFeePerGas: '30000000000', // 30 gwei
-    eip1559: true
-  },
-  bsc: {
-    gasLimit: 21000,
-    gasPrice: '5000000000', // 5 gwei
-    eip1559: false
-  },
-  arbitrum: {
-    gasLimit: 21000,
-    maxFeePerGas: '100000000', // 0.1 gwei
-    maxPriorityFeePerGas: '10000000', // 0.01 gwei
-    eip1559: true
-  },
-  avalanche: {
-    gasLimit: 21000,
-    maxFeePerGas: '25000000000', // 25 gwei
-    maxPriorityFeePerGas: '1500000000', // 1.5 gwei
-    eip1559: true
-  },
-  optimism: {
-    gasLimit: 21000,
-    maxFeePerGas: '1000000', // 0.001 gwei
-    maxPriorityFeePerGas: '1000000', // 0.001 gwei
-    eip1559: true
-  }
-};
-
-// ------------------------------------------------------------
-// Token list URLs - Production CDN with fallbacks
-// ------------------------------------------------------------
-const makeTokenListUrls = () => ({
-  primary: 'https://cdn.jsdelivr.net/gh/Trusx-crypto-wallet/trust-crypto-wallet-tokenlist@main/tokenlist.json',
-  fallback: 'https://raw.githubusercontent.com/Trusx-crypto-wallet/trust-crypto-wallet-tokenlist/main/tokenlist.json',
-  backup: 'https://tokens.coingecko.com/ethereum/all.json' // Emergency fallback
-});
-
-// ------------------------------------------------------------
-// Complete chain configurations map
-// ------------------------------------------------------------
-const CHAIN_CONFIGS = new Map([
-  // MAINNETS
-  [CHAIN_IDS.ETHEREUM, {
-    chainId: CHAIN_IDS.ETHEREUM,
-    name: 'Ethereum',
-    shortName: 'eth',
-    symbol: 'ETH',
-    isTestnet: false,
-    isL2: false,
-    rpcUrls: RPC_CONFIGS.ethereum.rpcUrls,
-    blockExplorerUrls: RPC_CONFIGS.ethereum.blockExplorerUrls,
-    websocketUrls: RPC_CONFIGS.ethereum.websocketUrls,
-    nativeCurrency: NATIVE_CURRENCIES.ethereum,
-    gasSettings: GAS_SETTINGS.ethereum,
-    tokenListUrls: makeTokenListUrls(),
-    iconUrl: '/images/chains/ethereum.png',
-    features: ['EIP1559', 'BRIDGE_SUPPORT', 'TOKEN_SWAPS']
-  }],
-
-  [CHAIN_IDS.POLYGON, {
-    chainId: CHAIN_IDS.POLYGON,
-    name: 'Polygon',
-    shortName: 'polygon',
-    symbol: 'MATIC',
-    isTestnet: false,
-    isL2: true,
-    rpcUrls: RPC_CONFIGS.polygon.rpcUrls,
-    blockExplorerUrls: RPC_CONFIGS.polygon.blockExplorerUrls,
-    websocketUrls: RPC_CONFIGS.polygon.websocketUrls,
-    nativeCurrency: NATIVE_CURRENCIES.polygon,
-    gasSettings: GAS_SETTINGS.polygon,
-    tokenListUrls: makeTokenListUrls(),
-    iconUrl: '/images/chains/polygon.png',
-    features: ['EIP1559', 'BRIDGE_SUPPORT', 'TOKEN_SWAPS', 'LOW_FEES']
-  }],
-
-  [CHAIN_IDS.BSC, {
-    chainId: CHAIN_IDS.BSC,
-    name: 'Binance Smart Chain',
-    shortName: 'bsc',
-    symbol: 'BNB',
-    isTestnet: false,
-    isL2: false,
-    rpcUrls: RPC_CONFIGS.bsc.rpcUrls,
-    blockExplorerUrls: RPC_CONFIGS.bsc.blockExplorerUrls,
-    websocketUrls: RPC_CONFIGS.bsc.websocketUrls,
-    nativeCurrency: NATIVE_CURRENCIES.bsc,
-    gasSettings: GAS_SETTINGS.bsc,
-    tokenListUrls: makeTokenListUrls(),
-    iconUrl: '/images/chains/bsc.png',
-    features: ['BRIDGE_SUPPORT', 'TOKEN_SWAPS', 'LOW_FEES']
-  }],
-
-  [CHAIN_IDS.ARBITRUM, {
-    chainId: CHAIN_IDS.ARBITRUM,
-    name: 'Arbitrum One',
-    shortName: 'arb',
-    symbol: 'ETH',
-    isTestnet: false,
-    isL2: true,
-    rpcUrls: RPC_CONFIGS.arbitrum.rpcUrls,
-    blockExplorerUrls: RPC_CONFIGS.arbitrum.blockExplorerUrls,
-    websocketUrls: RPC_CONFIGS.arbitrum.websocketUrls,
-    nativeCurrency: NATIVE_CURRENCIES.arbitrum,
-    gasSettings: GAS_SETTINGS.arbitrum,
-    tokenListUrls: makeTokenListUrls(),
-    iconUrl: '/images/chains/arbitrum.png',
-    features: ['EIP1559', 'BRIDGE_SUPPORT', 'TOKEN_SWAPS', 'LOW_FEES']
-  }],
-
-  [CHAIN_IDS.AVALANCHE, {
-    chainId: CHAIN_IDS.AVALANCHE,
-    name: 'Avalanche',
-    shortName: 'avax',
-    symbol: 'AVAX',
-    isTestnet: false,
-    isL2: false,
-    rpcUrls: RPC_CONFIGS.avalanche.rpcUrls,
-    blockExplorerUrls: RPC_CONFIGS.avalanche.blockExplorerUrls,
-    websocketUrls: RPC_CONFIGS.avalanche.websocketUrls,
-    nativeCurrency: NATIVE_CURRENCIES.avalanche,
-    gasSettings: GAS_SETTINGS.avalanche,
-    tokenListUrls: makeTokenListUrls(),
-    iconUrl: '/images/chains/avalanche.png',
-    features: ['EIP1559', 'BRIDGE_SUPPORT', 'TOKEN_SWAPS']
-  }],
-
-  [CHAIN_IDS.OPTIMISM, {
-    chainId: CHAIN_IDS.OPTIMISM,
-    name: 'Optimism',
-    shortName: 'op',
-    symbol: 'ETH',
-    isTestnet: false,
-    isL2: true,
-    rpcUrls: RPC_CONFIGS.optimism.rpcUrls,
-    blockExplorerUrls: RPC_CONFIGS.optimism.blockExplorerUrls,
-    websocketUrls: RPC_CONFIGS.optimism.websocketUrls,
-    nativeCurrency: NATIVE_CURRENCIES.optimism,
-    gasSettings: GAS_SETTINGS.optimism,
-    tokenListUrls: makeTokenListUrls(),
-    iconUrl: '/images/chains/optimism.png',
-    features: ['EIP1559', 'BRIDGE_SUPPORT', 'TOKEN_SWAPS', 'LOW_FEES']
-  }],
-
-  // TESTNETS
-  [CHAIN_IDS.ETHEREUM_SEPOLIA, {
-    chainId: CHAIN_IDS.ETHEREUM_SEPOLIA,
-    name: 'Ethereum Sepolia',
-    shortName: 'sep',
-    symbol: 'ETH',
-    isTestnet: true,
-    isL2: false,
-    rpcUrls: RPC_CONFIGS.sepolia.rpcUrls,
-    blockExplorerUrls: RPC_CONFIGS.sepolia.blockExplorerUrls,
-    websocketUrls: RPC_CONFIGS.sepolia.websocketUrls,
-    nativeCurrency: NATIVE_CURRENCIES.sepolia,
-    gasSettings: GAS_SETTINGS.ethereum,
-    tokenListUrls: makeTokenListUrls(),
-    iconUrl: '/images/chains/ethereum.png',
-    features: ['EIP1559', 'BRIDGE_SUPPORT']
-  }],
-
-  [CHAIN_IDS.ARBITRUM_SEPOLIA, {
-    chainId: CHAIN_IDS.ARBITRUM_SEPOLIA,
-    name: 'Arbitrum Sepolia',
-    shortName: 'arb-sep',
-    symbol: 'ETH',
-    isTestnet: true,
-    isL2: true,
-    rpcUrls: RPC_CONFIGS.arbitrumSepolia.rpcUrls,
-    blockExplorerUrls: RPC_CONFIGS.arbitrumSepolia.blockExplorerUrls,
-    websocketUrls: RPC_CONFIGS.arbitrumSepolia.websocketUrls,
-    nativeCurrency: NATIVE_CURRENCIES.arbitrumSepolia,
-    gasSettings: GAS_SETTINGS.arbitrum,
-    tokenListUrls: makeTokenListUrls(),
-    iconUrl: '/images/chains/arbitrum.png',
-    features: ['EIP1559', 'BRIDGE_SUPPORT', 'LOW_FEES']
-  }],
-
-  [CHAIN_IDS.OPTIMISM_SEPOLIA, {
-    chainId: CHAIN_IDS.OPTIMISM_SEPOLIA,
-    name: 'Optimism Sepolia',
-    shortName: 'op-sep',
-    symbol: 'ETH',
-    isTestnet: true,
-    isL2: true,
-    rpcUrls: RPC_CONFIGS.optimismSepolia.rpcUrls,
-    blockExplorerUrls: RPC_CONFIGS.optimismSepolia.blockExplorerUrls,
-    websocketUrls: RPC_CONFIGS.optimismSepolia.websocketUrls,
-    nativeCurrency: NATIVE_CURRENCIES.optimismSepolia,
-    gasSettings: GAS_SETTINGS.optimism,
-    tokenListUrls: makeTokenListUrls(),
-    iconUrl: '/images/chains/optimism.png',
-    features: ['EIP1559', 'BRIDGE_SUPPORT', 'LOW_FEES']
-  }],
-
-  [CHAIN_IDS.BSC_TESTNET, {
-    chainId: CHAIN_IDS.BSC_TESTNET,
-    name: 'BSC Testnet',
-    shortName: 'bsc-t',
-    symbol: 'tBNB',
-    isTestnet: true,
-    isL2: false,
-    rpcUrls: RPC_CONFIGS.bscTestnet.rpcUrls,
-    blockExplorerUrls: RPC_CONFIGS.bscTestnet.blockExplorerUrls,
-    websocketUrls: RPC_CONFIGS.bscTestnet.websocketUrls,
-    nativeCurrency: NATIVE_CURRENCIES.bscTestnet,
-    gasSettings: GAS_SETTINGS.bsc,
-    tokenListUrls: makeTokenListUrls(),
-    iconUrl: '/images/chains/bsc.png',
-    features: ['BRIDGE_SUPPORT', 'LOW_FEES']
-  }],
-
-  [CHAIN_IDS.AVALANCHE_FUJI, {
-    chainId: CHAIN_IDS.AVALANCHE_FUJI,
-    name: 'Avalanche Fuji',
-    shortName: 'fuji',
-    symbol: 'AVAX',
-    isTestnet: true,
-    isL2: false,
-    rpcUrls: RPC_CONFIGS.avalancheFuji.rpcUrls,
-    blockExplorerUrls: RPC_CONFIGS.avalancheFuji.blockExplorerUrls,
-    websocketUrls: RPC_CONFIGS.avalancheFuji.websocketUrls,
-    nativeCurrency: NATIVE_CURRENCIES.avalancheFuji,
-    gasSettings: GAS_SETTINGS.avalanche,
-    tokenListUrls: makeTokenListUrls(),
-    iconUrl: '/images/chains/avalanche.png',
-    features: ['EIP1559', 'BRIDGE_SUPPORT']
-  }],
-
-  [CHAIN_IDS.POLYGON_AMOY, {
-    chainId: CHAIN_IDS.POLYGON_AMOY,
-    name: 'Polygon Amoy',
-    shortName: 'amoy',
-    symbol: 'MATIC',
-    isTestnet: true,
-    isL2: true,
-    rpcUrls: RPC_CONFIGS.polygonAmoy.rpcUrls,
-    blockExplorerUrls: RPC_CONFIGS.polygonAmoy.blockExplorerUrls,
-    websocketUrls: RPC_CONFIGS.polygonAmoy.websocketUrls,
-    nativeCurrency: NATIVE_CURRENCIES.polygonAmoy,
-    gasSettings: GAS_SETTINGS.polygon,
-    tokenListUrls: makeTokenListUrls(),
-    iconUrl: '/images/chains/polygon.png',
-    features: ['EIP1559', 'BRIDGE_SUPPORT', 'LOW_FEES']
-  }]
-]);
-
-// ------------------------------------------------------------
-// Simple CHAINS object for bridgeConfig.js compatibility
-// ------------------------------------------------------------
-const CHAINS = {
-  1: { 
-    name: 'Ethereum', 
-    symbol: 'ETH', 
-    rpc: 'https://ethereum-rpc.publicnode.com',
-    chainId: 1,
-    isTestnet: false
-  },
-  56: { 
-    name: 'BSC', 
-    symbol: 'BNB', 
-    rpc: 'https://bsc-rpc.publicnode.com',
-    chainId: 56,
-    isTestnet: false
-  },
-  137: { 
-    name: 'Polygon', 
-    symbol: 'MATIC', 
-    rpc: 'https://polygon-bor-rpc.publicnode.com',
-    chainId: 137,
-    isTestnet: false
-  },
-  42161: { 
-    name: 'Arbitrum', 
-    symbol: 'ETH', 
-    rpc: 'https://arbitrum-one-rpc.publicnode.com',
-    chainId: 42161,
-    isTestnet: false
-  },
-  10: { 
-    name: 'Optimism', 
-    symbol: 'ETH', 
-    rpc: 'https://optimism-rpc.publicnode.com',
-    chainId: 10,
-    isTestnet: false
-  },
-  43114: { 
-    name: 'Avalanche', 
-    symbol: 'AVAX', 
-    rpc: 'https://avalanche-c-chain-rpc.publicnode.com',
-    chainId: 43114,
-    isTestnet: false
-  }
-};
-
-// ------------------------------------------------------------
-// Production utility functions
-// ------------------------------------------------------------
-const getChainConfig = (chainId) => {
-  try {
-    return CHAIN_CONFIGS.get(parseInt(chainId)) || null;
-  } catch (error) {
-    console.error('Invalid chainId provided:', chainId);
-    return null;
-  }
-};
-
-const isTestnet = (chainId) => {
-  const config = getChainConfig(chainId);
-  return config ? config.isTestnet : false;
-};
-
-const isL2 = (chainId) => {
-  const config = getChainConfig(chainId);
-  return config ? config.isL2 : false;
-};
-
-const getAllMainnets = () => {
-  return Array.from(CHAIN_CONFIGS.values()).filter(config => !config.isTestnet);
-};
-
-const getAllTestnets = () => {
-  return Array.from(CHAIN_CONFIGS.values()).filter(config => config.isTestnet);
-};
-
-const getSupportedChainIds = () => {
-  return Array.from(CHAIN_CONFIGS.keys());
-};
-
-const getMainnetChainIds = () => {
-  return getAllMainnets().map(config => config.chainId);
-};
-
-const getTestnetChainIds = () => {
-  return getAllTestnets().map(config => config.chainId);
-};
-
-const getRpcUrl = (chainId, index = 0) => {
-  const config = getChainConfig(chainId);
-  if (!config || !config.rpcUrls || !config.rpcUrls[index]) {
-    return null;
-  }
-  return config.rpcUrls[index];
-};
-
-const getExplorerUrl = (chainId) => {
-  const config = getChainConfig(chainId);
-  if (!config || !config.blockExplorerUrls || !config.blockExplorerUrls[0]) {
-    return null;
-  }
-  return config.blockExplorerUrls[0];
-};
-
-const validateChainId = (chainId) => {
-  return CHAIN_CONFIGS.has(parseInt(chainId));
-};
-
-// ------------------------------------------------------------
-// Production error handling and validation
-// ------------------------------------------------------------
-const validateConfiguration = () => {
-  const errors = [];
-  const warnings = [];
-
-  // Validate all chain configurations
-  for (const [chainId, config] of CHAIN_CONFIGS) {
-    if (!config.name || !config.symbol || !config.rpcUrls?.length) {
-      errors.push(`Invalid configuration for chain ${chainId}`);
+/**
+ * Chain configuration class with extension-based network loading
+ */
+export class ChainsConfig {
+    constructor() {
+        this.networks = new Map();
+        this.rpcEndpoints = new Map();
+        this.tokenMappings = new Map();
+        this.testnetNetworks = new Map();
+        this.initialized = false;
+        this.urlConfig = {
+            extension: 'https://raw.githubusercontent.com/Trusx-crypto-wallet/trust-crypto-wallet-tokenlist/main/extension.json'
+        };
     }
-    if (!config.blockExplorerUrls?.length) {
-      warnings.push(`No block explorer configured for chain ${chainId}`);
+
+    /**
+     * Initialize chain configuration with extension data
+     * @returns {Promise<void>}
+     */
+    async initialize() {
+        try {
+            logger.info('Initializing chain configuration for Trust Crypto Wallet Extension...');
+            
+            const response = await this.fetchWithTimeout(this.urlConfig.extension, 5000);
+            const extensionData = await response.json();
+
+            // Extract network data from extension
+            await this.processMainnetNetworks(extensionData.lists?.mainnet?.networks || []);
+            await this.processTestnetNetworks(extensionData.lists?.testnet?.networks || []);
+            
+            // Setup RPC fallbacks
+            await this.setupRPCFallbacks();
+            
+            this.initialized = true;
+            logger.info('Chain configuration initialized successfully for Trust Crypto Wallet Extension');
+
+        } catch (error) {
+            logger.error('Failed to initialize chain configuration:', error);
+            await this.initializeFallback();
+        }
     }
-  }
 
-  return { isValid: errors.length === 0, errors, warnings };
-};
+    /**
+     * Fetch URL with timeout
+     * @param {string} url 
+     * @param {number} timeout 
+     * @returns {Promise<Response>}
+     */
+    async fetchWithTimeout(url, timeout = 5000) {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), timeout);
+        
+        try {
+            const response = await fetch(url, { 
+                signal: controller.signal,
+                headers: {
+                    'Accept': 'application/json',
+                    'Cache-Control': 'no-cache'
+                }
+            });
+            
+            if (!response.ok) {
+                throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+            }
+            
+            return response;
+        } finally {
+            clearTimeout(timeoutId);
+        }
+    }
 
-// ------------------------------------------------------------
-// CommonJS exports for production use
-// ------------------------------------------------------------
-module.exports = {
-  // Core exports
-  CHAIN_IDS,
-  CHAIN_CONFIGS,
-  CHAINS, // Required by bridgeConfig.js
-  
-  // Utility functions
-  getChainConfig,
-  isTestnet,
-  isL2,
-  getAllMainnets,
-  getAllTestnets,
-  getSupportedChainIds,
-  getMainnetChainIds,
-  getTestnetChainIds,
-  getRpcUrl,
-  getExplorerUrl,
-  validateChainId,
-  validateConfiguration,
-  
-  // Production configurations
-  RPC_CONFIGS,
-  NATIVE_CURRENCIES,
-  GAS_SETTINGS
-};
+    /**
+     * Process mainnet networks from extension
+     * @param {Array} networks 
+     */
+    async processMainnetNetworks(networks) {
+        for (const network of networks) {
+            try {
+                const chainConfig = {
+                    chainId: network.chainId,
+                    name: network.name,
+                    shortName: network.shortName,
+                    nativeCurrency: network.nativeCurrency,
+                    rpcUrls: network.rpcUrls || [],
+                    blockExplorerUrls: network.blockExplorerUrls || [],
+                    iconPath: this.getChainIcon(network.shortName),
+                    isTestnet: false,
+                    features: network.features || [],
+                    gasSettings: network.gasSettings || {},
+                    bridgeSupport: network.bridgeSupport || []
+                };
+
+                this.networks.set(network.chainId, chainConfig);
+                this.setupRPCEndpoints(network.chainId, network.rpcUrls || []);
+                
+                logger.debug(`Processed mainnet network: ${network.name} (${network.chainId})`);
+            } catch (error) {
+                logger.warn(`Failed to process mainnet network ${network.chainId}:`, error);
+            }
+        }
+    }
+
+    /**
+     * Process testnet networks from extension
+     * @param {Array} networks 
+     */
+    async processTestnetNetworks(networks) {
+        for (const network of networks) {
+            try {
+                const chainConfig = {
+                    chainId: network.chainId,
+                    name: network.name,
+                    shortName: network.shortName,
+                    nativeCurrency: network.nativeCurrency,
+                    rpcUrls: network.rpcUrls || [],
+                    blockExplorerUrls: network.blockExplorerUrls || [],
+                    iconPath: this.getChainIcon(network.shortName),
+                    isTestnet: true,
+                    features: network.features || [],
+                    gasSettings: network.gasSettings || {},
+                    bridgeSupport: network.bridgeSupport || []
+                };
+
+                this.testnetNetworks.set(network.chainId, chainConfig);
+                this.setupRPCEndpoints(network.chainId, network.rpcUrls || []);
+                
+                logger.debug(`Processed testnet network: ${network.name} (${network.chainId})`);
+            } catch (error) {
+                logger.warn(`Failed to process testnet network ${network.chainId}:`, error);
+            }
+        }
+    }
+
+    /**
+     * Setup RPC endpoints with fallback support
+     * @param {number} chainId 
+     * @param {Array} rpcUrls 
+     */
+    setupRPCEndpoints(chainId, rpcUrls) {
+        if (!Array.isArray(rpcUrls) || rpcUrls.length === 0) {
+            logger.warn(`No RPC URLs provided for chain ${chainId}`);
+            return;
+        }
+
+        // Add fallback RPCs based on chain
+        const fallbackRPCs = this.getFallbackRPCs(chainId);
+        const allRPCs = [...rpcUrls, ...fallbackRPCs];
+        
+        this.rpcEndpoints.set(chainId, {
+            primary: allRPCs[0],
+            fallbacks: allRPCs.slice(1),
+            all: allRPCs,
+            lastUpdated: Date.now(),
+            status: new Map() // Track RPC health
+        });
+    }
+
+    /**
+     * Get fallback RPC URLs for chain
+     * @param {number} chainId 
+     * @returns {Array<string>}
+     */
+    getFallbackRPCs(chainId) {
+        const fallbackMap = {
+            1: [ // Ethereum
+                'https://ethereum-rpc.publicnode.com',
+                'https://rpc.ankr.com/eth',
+                'https://eth.llamarpc.com'
+            ],
+            56: [ // BSC
+                'https://bsc-dataseed1.binance.org',
+                'https://rpc.ankr.com/bsc',
+                'https://bsc.publicnode.com'
+            ],
+            137: [ // Polygon
+                'https://polygon-rpc.com',
+                'https://rpc.ankr.com/polygon',
+                'https://polygon.llamarpc.com'
+            ],
+            42161: [ // Arbitrum
+                'https://arb1.arbitrum.io/rpc',
+                'https://rpc.ankr.com/arbitrum',
+                'https://arbitrum.llamarpc.com'
+            ],
+            10: [ // Optimism
+                'https://mainnet.optimism.io',
+                'https://rpc.ankr.com/optimism',
+                'https://optimism.llamarpc.com'
+            ],
+            43114: [ // Avalanche
+                'https://api.avax.network/ext/bc/C/rpc',
+                'https://rpc.ankr.com/avalanche',
+                'https://avalanche.drpc.org'
+            ],
+            // Testnet fallbacks
+            11155111: [ // Sepolia
+                'https://sepolia.infura.io/v3/9aa3d95b3bc440fa88ea12eaa4456161',
+                'https://rpc.ankr.com/eth_sepolia',
+                'https://sepolia.gateway.tenderly.co'
+            ],
+            97: [ // BSC Testnet
+                'https://data-seed-prebsc-1-s1.binance.org:8545',
+                'https://bsc-testnet.publicnode.com',
+                'https://rpc.ankr.com/bsc_testnet_chapel'
+            ],
+            80001: [ // Mumbai
+                'https://rpc-mumbai.maticvigil.com',
+                'https://rpc.ankr.com/polygon_mumbai',
+                'https://polygon-mumbai.gateway.tenderly.co'
+            ]
+        };
+
+        return fallbackMap[chainId] || [];
+    }
+
+    /**
+     * Get chain icon path
+     * @param {string} shortName 
+     * @returns {string}
+     */
+    getChainIcon(shortName) {
+        const iconMap = {
+            'eth': '/public/images/chains/ethereum.png',
+            'bsc': '/public/images/chains/bsc.png',
+            'matic': '/public/images/chains/polygon.png',
+            'arb1': '/public/images/chains/arbitrum.png',
+            'oeth': '/public/images/chains/optimism.png',
+            'avax': '/public/images/chains/avalanche.png'
+        };
+
+        return iconMap[shortName.toLowerCase()] || '/public/images/chains/ethereum.png';
+    }
+
+    /**
+     * Setup fallback RPC management
+     */
+    async setupRPCFallbacks() {
+        // Initialize health checks for all RPC endpoints
+        for (const [chainId, rpcData] of this.rpcEndpoints) {
+            for (const rpcUrl of rpcData.all) {
+                rpcData.status.set(rpcUrl, {
+                    healthy: true,
+                    latency: 0,
+                    lastCheck: 0,
+                    errorCount: 0
+                });
+            }
+        }
+
+        // Start periodic health checks
+        this.startRPCHealthChecks();
+    }
+
+    /**
+     * Start RPC health monitoring
+     */
+    startRPCHealthChecks() {
+        // Check RPC health every 5 minutes
+        setInterval(async () => {
+            await this.checkRPCHealth();
+        }, 5 * 60 * 1000);
+    }
+
+    /**
+     * Check RPC endpoint health
+     */
+    async checkRPCHealth() {
+        for (const [chainId, rpcData] of this.rpcEndpoints) {
+            for (const rpcUrl of rpcData.all) {
+                try {
+                    const startTime = Date.now();
+                    
+                    const response = await fetch(rpcUrl, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            jsonrpc: '2.0',
+                            method: 'eth_blockNumber',
+                            params: [],
+                            id: 1
+                        }),
+                        signal: AbortSignal.timeout(5000)
+                    });
+
+                    const latency = Date.now() - startTime;
+                    const isHealthy = response.ok;
+
+                    rpcData.status.set(rpcUrl, {
+                        healthy: isHealthy,
+                        latency,
+                        lastCheck: Date.now(),
+                        errorCount: isHealthy ? 0 : rpcData.status.get(rpcUrl).errorCount + 1
+                    });
+
+                } catch (error) {
+                    const currentStatus = rpcData.status.get(rpcUrl);
+                    rpcData.status.set(rpcUrl, {
+                        healthy: false,
+                        latency: 9999,
+                        lastCheck: Date.now(),
+                        errorCount: currentStatus.errorCount + 1
+                    });
+                }
+            }
+        }
+    }
+
+    /**
+     * Initialize fallback configuration
+     */
+    async initializeFallback() {
+        logger.warn('Using fallback chain configuration for Trust Crypto Wallet Extension');
+        
+        // Ethereum Mainnet
+        this.networks.set(1, {
+            chainId: 1,
+            name: 'Ethereum Mainnet',
+            shortName: 'eth',
+            nativeCurrency: {
+                name: 'Ether',
+                symbol: 'ETH',
+                decimals: 18
+            },
+            rpcUrls: ['https://ethereum-rpc.publicnode.com'],
+            blockExplorerUrls: ['https://etherscan.io'],
+            iconPath: '/public/images/chains/ethereum.png',
+            isTestnet: false,
+            features: ['eip1559', 'london'],
+            gasSettings: { type: 2, maxFeePerGas: '20000000000', maxPriorityFeePerGas: '2000000000' },
+            bridgeSupport: ['layerzero', 'wormhole', 'axelar', 'hyperlane', 'chainlink']
+        });
+
+        // Polygon
+        this.networks.set(137, {
+            chainId: 137,
+            name: 'Polygon Mainnet',
+            shortName: 'matic',
+            nativeCurrency: {
+                name: 'MATIC',
+                symbol: 'MATIC',
+                decimals: 18
+            },
+            rpcUrls: ['https://polygon-rpc.com'],
+            blockExplorerUrls: ['https://polygonscan.com'],
+            iconPath: '/public/images/chains/polygon.png',
+            isTestnet: false,
+            features: ['eip1559'],
+            gasSettings: { type: 2, maxFeePerGas: '50000000000', maxPriorityFeePerGas: '30000000000' },
+            bridgeSupport: ['layerzero', 'wormhole', 'axelar', 'hyperlane']
+        });
+
+        // BSC
+        this.networks.set(56, {
+            chainId: 56,
+            name: 'BNB Smart Chain',
+            shortName: 'bsc',
+            nativeCurrency: {
+                name: 'BNB',
+                symbol: 'BNB',
+                decimals: 18
+            },
+            rpcUrls: ['https://bsc-dataseed1.binance.org'],
+            blockExplorerUrls: ['https://bscscan.com'],
+            iconPath: '/public/images/chains/bsc.png',
+            isTestnet: false,
+            features: ['legacy'],
+            gasSettings: { gasPrice: '5000000000' },
+            bridgeSupport: ['layerzero', 'wormhole', 'axelar']
+        });
+
+        // Arbitrum
+        this.networks.set(42161, {
+            chainId: 42161,
+            name: 'Arbitrum One',
+            shortName: 'arb1',
+            nativeCurrency: {
+                name: 'Ether',
+                symbol: 'ETH',
+                decimals: 18
+            },
+            rpcUrls: ['https://arb1.arbitrum.io/rpc'],
+            blockExplorerUrls: ['https://arbiscan.io'],
+            iconPath: '/public/images/chains/arbitrum.png',
+            isTestnet: false,
+            features: ['eip1559'],
+            gasSettings: { type: 2, maxFeePerGas: '1000000000', maxPriorityFeePerGas: '100000000' },
+            bridgeSupport: ['layerzero', 'wormhole', 'hyperlane', 'chainlink']
+        });
+
+        // Optimism
+        this.networks.set(10, {
+            chainId: 10,
+            name: 'Optimism',
+            shortName: 'oeth',
+            nativeCurrency: {
+                name: 'Ether',
+                symbol: 'ETH',
+                decimals: 18
+            },
+            rpcUrls: ['https://mainnet.optimism.io'],
+            blockExplorerUrls: ['https://optimistic.etherscan.io'],
+            iconPath: '/public/images/chains/optimism.png',
+            isTestnet: false,
+            features: ['eip1559'],
+            gasSettings: { type: 2, maxFeePerGas: '1000000000', maxPriorityFeePerGas: '100000000' },
+            bridgeSupport: ['layerzero', 'wormhole', 'hyperlane', 'chainlink']
+        });
+
+        // Avalanche
+        this.networks.set(43114, {
+            chainId: 43114,
+            name: 'Avalanche C-Chain',
+            shortName: 'avax',
+            nativeCurrency: {
+                name: 'AVAX',
+                symbol: 'AVAX',
+                decimals: 18
+            },
+            rpcUrls: ['https://api.avax.network/ext/bc/C/rpc'],
+            blockExplorerUrls: ['https://snowtrace.io'],
+            iconPath: '/public/images/chains/avalanche.png',
+            isTestnet: false,
+            features: ['eip1559'],
+            gasSettings: { type: 2, maxFeePerGas: '30000000000', maxPriorityFeePerGas: '2000000000' },
+            bridgeSupport: ['layerzero', 'wormhole', 'axelar']
+        });
+
+        // Testnets
+        this.testnetNetworks.set(11155111, {
+            chainId: 11155111,
+            name: 'Sepolia Testnet',
+            shortName: 'sep',
+            nativeCurrency: {
+                name: 'Sepolia Ether',
+                symbol: 'ETH',
+                decimals: 18
+            },
+            rpcUrls: ['https://sepolia.infura.io/v3/9aa3d95b3bc440fa88ea12eaa4456161'],
+            blockExplorerUrls: ['https://sepolia.etherscan.io'],
+            iconPath: '/public/images/chains/ethereum.png',
+            isTestnet: true,
+            features: ['eip1559'],
+            gasSettings: { type: 2, maxFeePerGas: '10000000000', maxPriorityFeePerGas: '1000000000' },
+            bridgeSupport: ['layerzero']
+        });
+
+        // Setup RPC endpoints for all networks
+        for (const [chainId, network] of this.networks) {
+            this.setupRPCEndpoints(chainId, network.rpcUrls);
+        }
+        for (const [chainId, network] of this.testnetNetworks) {
+            this.setupRPCEndpoints(chainId, network.rpcUrls);
+        }
+
+        await this.setupRPCFallbacks();
+        this.initialized = true;
+    }
+
+    /**
+     * Get network configuration by chain ID
+     * @param {number} chainId 
+     * @param {boolean} includeTestnet 
+     * @returns {Object|null}
+     */
+    getNetwork(chainId, includeTestnet = false) {
+        if (!this.initialized) {
+            throw new BridgeErrors.NotInitializedError('Chain configuration not initialized');
+        }
+
+        // Check mainnet first
+        if (this.networks.has(chainId)) {
+            return this.networks.get(chainId);
+        }
+
+        // Check testnet if requested
+        if (includeTestnet && this.testnetNetworks.has(chainId)) {
+            return this.testnetNetworks.get(chainId);
+        }
+
+        return null;
+    }
+
+    /**
+     * Get all mainnet networks
+     * @returns {Array}
+     */
+    getMainnetNetworks() {
+        if (!this.initialized) {
+            throw new BridgeErrors.NotInitializedError('Chain configuration not initialized');
+        }
+        return Array.from(this.networks.values());
+    }
+
+    /**
+     * Get all testnet networks
+     * @returns {Array}
+     */
+    getTestnetNetworks() {
+        if (!this.initialized) {
+            throw new BridgeErrors.NotInitializedError('Chain configuration not initialized');
+        }
+        return Array.from(this.testnetNetworks.values());
+    }
+
+    /**
+     * Get all networks (mainnet + testnet)
+     * @returns {Array}
+     */
+    getAllNetworks() {
+        if (!this.initialized) {
+            throw new BridgeErrors.NotInitializedError('Chain configuration not initialized');
+        }
+        return [...this.getMainnetNetworks(), ...this.getTestnetNetworks()];
+    }
+
+    /**
+     * Get RPC endpoint for chain
+     * @param {number} chainId 
+     * @returns {string|null}
+     */
+    getRPCEndpoint(chainId) {
+        if (!this.rpcEndpoints.has(chainId)) {
+            return null;
+        }
+
+        const rpcData = this.rpcEndpoints.get(chainId);
+        
+        // Find the first healthy RPC
+        for (const rpcUrl of rpcData.all) {
+            const status = rpcData.status.get(rpcUrl);
+            if (status && status.healthy && status.errorCount < 3) {
+                return rpcUrl;
+            }
+        }
+
+        // If no healthy RPC found, return primary
+        return rpcData.primary;
+    }
+
+    /**
+     * Get all RPC endpoints for chain
+     * @param {number} chainId 
+     * @returns {Array<string>}
+     */
+    getAllRPCEndpoints(chainId) {
+        if (!this.rpcEndpoints.has(chainId)) {
+            return [];
+        }
+        return this.rpcEndpoints.get(chainId).all;
+    }
+
+    /**
+     * Get RPC health status
+     * @param {number} chainId 
+     * @returns {Object}
+     */
+    getRPCHealthStatus(chainId) {
+        if (!this.rpcEndpoints.has(chainId)) {
+            return null;
+        }
+
+        const rpcData = this.rpcEndpoints.get(chainId);
+        const healthStatus = {};
+
+        for (const [rpcUrl, status] of rpcData.status) {
+            healthStatus[rpcUrl] = {
+                healthy: status.healthy,
+                latency: status.latency,
+                lastCheck: status.lastCheck,
+                errorCount: status.errorCount
+            };
+        }
+
+        return healthStatus;
+    }
+
+    /**
+     * Check if chain supports bridge protocol
+     * @param {number} chainId 
+     * @param {string} protocolId 
+     * @returns {boolean}
+     */
+    supportsBridgeProtocol(chainId, protocolId) {
+        const network = this.getNetwork(chainId, true);
+        return network ? network.bridgeSupport.includes(protocolId) : false;
+    }
+
+    /**
+     * Get supported bridge protocols for chain
+     * @param {number} chainId 
+     * @returns {Array<string>}
+     */
+    getSupportedBridgeProtocols(chainId) {
+        const network = this.getNetwork(chainId, true);
+        return network ? network.bridgeSupport : [];
+    }
+
+    /**
+     * Get chain token mappings
+     * @param {number} chainId 
+     * @returns {Map}
+     */
+    getChainTokenMappings(chainId) {
+        return this.tokenMappings.get(chainId) || new Map();
+    }
+
+    /**
+     * Add token mapping for chain
+     * @param {number} chainId 
+     * @param {string} tokenAddress 
+     * @param {Object} tokenData 
+     */
+    addTokenMapping(chainId, tokenAddress, tokenData) {
+        if (!this.tokenMappings.has(chainId)) {
+            this.tokenMappings.set(chainId, new Map());
+        }
+        this.tokenMappings.get(chainId).set(tokenAddress, tokenData);
+    }
+
+    /**
+     * Get private chain configuration
+     * @returns {Object}
+     */
+    getPrivateChainConfig() {
+        if (!this.initialized) {
+            throw new BridgeErrors.NotInitializedError('Chain configuration not initialized');
+        }
+
+        return {
+            mainnetNetworks: Object.fromEntries(this.networks),
+            testnetNetworks: Object.fromEntries(this.testnetNetworks),
+            rpcEndpoints: Object.fromEntries(
+                Array.from(this.rpcEndpoints.entries()).map(([chainId, rpcData]) => [
+                    chainId,
+                    {
+                        primary: rpcData.primary,
+                        fallbacks: rpcData.fallbacks,
+                        all: rpcData.all
+                    }
+                ])
+            ),
+            tokenMappings: Object.fromEntries(
+                Array.from(this.tokenMappings.entries()).map(([chainId, tokens]) => [
+                    chainId,
+                    Object.fromEntries(tokens)
+                ])
+            ),
+            lastUpdated: new Date().toISOString()
+        };
+    }
+
+    /**
+     * Validate chain ID
+     * @param {number} chainId 
+     * @returns {boolean}
+     */
+    isValidChainId(chainId) {
+        return this.networks.has(chainId) || this.testnetNetworks.has(chainId);
+    }
+
+    /**
+     * Get supported chain IDs
+     * @param {boolean} includeTestnet 
+     * @returns {Array<number>}
+     */
+    getSupportedChainIds(includeTestnet = false) {
+        const mainnetIds = Array.from(this.networks.keys());
+        if (includeTestnet) {
+            const testnetIds = Array.from(this.testnetNetworks.keys());
+            return [...mainnetIds, ...testnetIds].sort((a, b) => a - b);
+        }
+        return mainnetIds.sort((a, b) => a - b);
+    }
+}
+
+// Create singleton instance
+export const chainsConfig = new ChainsConfig();
+
+// Default export
+export default chainsConfig;
