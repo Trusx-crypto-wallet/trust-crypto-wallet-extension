@@ -1,416 +1,559 @@
-// config/broadcast.config.js
-// ------------------------------------------------------------
-// Transaction broadcasting configuration per chain including
-// retry strategies, timeouts, and broadcasting methods
-// ------------------------------------------------------------
+/**
+ * Production-Ready Broadcasting Configuration
+ * Trust Crypto Wallet Extension - Transaction Broadcasting & MEV Protection
+ * 
+ * @fileoverview Comprehensive broadcasting configuration with production-grade
+ * security features, gas optimization, retry logic, and MEV protection
+ * 
+ * Security Features:
+ * - Anti-MEV protection mechanisms
+ * - Transaction pool isolation
+ * - Dynamic fee adjustment
+ * - Mempool monitoring
+ * - Slippage protection
+ * 
+ * @version 1.0.0
+ * @author Trust Crypto Wallet Team
+ * @license MIT
+ */
 
-import { CHAIN_IDS } from './token.config.js';
-
-// ------------------------------------------------------------
-// Broadcasting strategies available
-// ------------------------------------------------------------
-export const BROADCAST_STRATEGIES = Object.freeze({
-  SINGLE: 'single',           // Single provider broadcast
-  PARALLEL: 'parallel',       // Broadcast to multiple providers simultaneously
-  SEQUENTIAL: 'sequential',   // Try providers one by one until success
-  REDUNDANT: 'redundant'      // Broadcast to all providers for maximum reliability
-});
-
-// ------------------------------------------------------------
-// Broadcast settings per chain ID
-// ------------------------------------------------------------
-export const BROADCAST_SETTINGS = Object.freeze({
-  // ── Ethereum Mainnet (1) ───────────────────────────────────
-  [CHAIN_IDS.ETHEREUM]: Object.freeze({
-    strategy: BROADCAST_STRATEGIES.PARALLEL,
-    maxRetries: 5,
-    retryDelay: 2000,           // 2 seconds initial delay
-    maxRetryDelay: 30000,       // max 30 seconds
-    exponentialBackoff: true,
-    timeout: 120000,            // 2 minutes for complex transactions
-    confirmationBlocks: 3,
-    gasEstimationBuffer: 1.2,   // 20% gas buffer
-    priorityProviders: Object.freeze([
-      'publicnode',
-      'llamarpc',
-      'ankr'
-    ]),
-    enableMevProtection: true,
-    mempoolMonitoring: true,
-    replacementPolicy: 'increase_gas' // 'cancel' | 'speed_up' | 'increase_gas'
-  }),
-
-  // ── Polygon Mainnet (137) ──────────────────────────────────
-  [CHAIN_IDS.POLYGON]: Object.freeze({
-    strategy: BROADCAST_STRATEGIES.SEQUENTIAL,
-    maxRetries: 4,
-    retryDelay: 1000,           // 1 second initial delay
-    maxRetryDelay: 15000,       // max 15 seconds
-    exponentialBackoff: true,
-    timeout: 60000,             // 1 minute
-    confirmationBlocks: 5,      // Polygon reorganization protection
-    gasEstimationBuffer: 1.15,  // 15% gas buffer
-    priorityProviders: Object.freeze([
-      'polygon-rpc',
-      'publicnode',
-      'ankr'
-    ]),
-    enableMevProtection: false, // Less MEV activity on Polygon
-    mempoolMonitoring: true,
-    replacementPolicy: 'speed_up'
-  }),
-
-  // ── BSC Mainnet (56) ───────────────────────────────────────
-  [CHAIN_IDS.BSC]: Object.freeze({
-    strategy: BROADCAST_STRATEGIES.SEQUENTIAL,
-    maxRetries: 3,
-    retryDelay: 1000,           // 1 second initial delay
-    maxRetryDelay: 10000,       // max 10 seconds
-    exponentialBackoff: true,
-    timeout: 45000,             // 45 seconds
-    confirmationBlocks: 3,
-    gasEstimationBuffer: 1.1,   // 10% gas buffer (cheap gas)
-    priorityProviders: Object.freeze([
-      'binance-official',
-      'publicnode',
-      'ankr'
-    ]),
-    enableMevProtection: false,
-    mempoolMonitoring: true,
-    replacementPolicy: 'speed_up'
-  }),
-
-  // ── Arbitrum One (42161) ───────────────────────────────────
-  [CHAIN_IDS.ARBITRUM]: Object.freeze({
-    strategy: BROADCAST_STRATEGIES.SINGLE,
-    maxRetries: 3,
-    retryDelay: 500,            // 500ms initial delay (fast L2)
-    maxRetryDelay: 5000,        // max 5 seconds
-    exponentialBackoff: true,
-    timeout: 30000,             // 30 seconds
-    confirmationBlocks: 1,      // Fast finality on L2
-    gasEstimationBuffer: 1.05,  // 5% gas buffer (cheap L2 gas)
-    priorityProviders: Object.freeze([
-      'arbitrum-official',
-      'publicnode',
-      'ankr'
-    ]),
-    enableMevProtection: false, // L2 has different MEV dynamics
-    mempoolMonitoring: false,   // Less critical on L2
-    replacementPolicy: 'cancel'
-  }),
-
-  // ── Avalanche C-Chain (43114) ──────────────────────────────
-  [CHAIN_IDS.AVALANCHE]: Object.freeze({
-    strategy: BROADCAST_STRATEGIES.SEQUENTIAL,
-    maxRetries: 3,
-    retryDelay: 1000,           // 1 second initial delay
-    maxRetryDelay: 8000,        // max 8 seconds
-    exponentialBackoff: true,
-    timeout: 30000,             // 30 seconds (fast finality)
-    confirmationBlocks: 1,      // Avalanche has fast finality
-    gasEstimationBuffer: 1.1,   // 10% gas buffer
-    priorityProviders: Object.freeze([
-      'avalanche-official',
-      'publicnode',
-      'ankr'
-    ]),
-    enableMevProtection: false,
-    mempoolMonitoring: true,
-    replacementPolicy: 'speed_up'
-  }),
-
-  // ── Optimism Mainnet (10) ──────────────────────────────────
-  [CHAIN_IDS.OPTIMISM]: Object.freeze({
-    strategy: BROADCAST_STRATEGIES.SINGLE,
-    maxRetries: 3,
-    retryDelay: 500,            // 500ms initial delay (fast L2)
-    maxRetryDelay: 5000,        // max 5 seconds
-    exponentialBackoff: true,
-    timeout: 30000,             // 30 seconds
-    confirmationBlocks: 1,      // Fast finality on L2
-    gasEstimationBuffer: 1.05,  // 5% gas buffer
-    priorityProviders: Object.freeze([
-      'optimism-official',
-      'publicnode',
-      'ankr'
-    ]),
-    enableMevProtection: false,
-    mempoolMonitoring: false,
-    replacementPolicy: 'cancel'
-  }),
-
-  // ── Ethereum Sepolia Testnet (11155111) ────────────────────
-  [CHAIN_IDS.ETHEREUM_SEPOLIA]: Object.freeze({
-    strategy: BROADCAST_STRATEGIES.SINGLE,
-    maxRetries: 2,
-    retryDelay: 3000,           // 3 seconds (testnet can be slow)
-    maxRetryDelay: 15000,       // max 15 seconds
-    exponentialBackoff: true,
-    timeout: 60000,             // 1 minute
-    confirmationBlocks: 2,
-    gasEstimationBuffer: 1.5,   // 50% buffer for testnet variability
-    priorityProviders: Object.freeze([
-      'publicnode',
-      'infura-demo'
-    ]),
-    enableMevProtection: false,
-    mempoolMonitoring: false,
-    replacementPolicy: 'speed_up'
-  }),
-
-  // ── Arbitrum Sepolia Testnet (421614) ──────────────────────
-  [CHAIN_IDS.ARBITRUM_SEPOLIA]: Object.freeze({
-    strategy: BROADCAST_STRATEGIES.SINGLE,
-    maxRetries: 2,
-    retryDelay: 2000,           // 2 seconds
-    maxRetryDelay: 10000,       // max 10 seconds
-    exponentialBackoff: true,
-    timeout: 45000,             // 45 seconds
-    confirmationBlocks: 1,
-    gasEstimationBuffer: 1.3,   // 30% buffer for testnet
-    priorityProviders: Object.freeze([
-      'arbitrum-sepolia',
-      'publicnode'
-    ]),
-    enableMevProtection: false,
-    mempoolMonitoring: false,
-    replacementPolicy: 'cancel'
-  }),
-
-  // ── Optimism Sepolia Testnet (11155420) ────────────────────
-  [CHAIN_IDS.OPTIMISM_SEPOLIA]: Object.freeze({
-    strategy: BROADCAST_STRATEGIES.SINGLE,
-    maxRetries: 2,
-    retryDelay: 2000,           // 2 seconds
-    maxRetryDelay: 10000,       // max 10 seconds
-    exponentialBackoff: true,
-    timeout: 45000,             // 45 seconds
-    confirmationBlocks: 1,
-    gasEstimationBuffer: 1.3,   // 30% buffer for testnet
-    priorityProviders: Object.freeze([
-      'optimism-sepolia',
-      'publicnode'
-    ]),
-    enableMevProtection: false,
-    mempoolMonitoring: false,
-    replacementPolicy: 'cancel'
-  }),
-
-  // ── BSC Testnet (97) ───────────────────────────────────────
-  [CHAIN_IDS.BSC_TESTNET]: Object.freeze({
-    strategy: BROADCAST_STRATEGIES.SINGLE,
-    maxRetries: 2,
-    retryDelay: 2000,           // 2 seconds
-    maxRetryDelay: 12000,       // max 12 seconds
-    exponentialBackoff: true,
-    timeout: 45000,             // 45 seconds
-    confirmationBlocks: 2,
-    gasEstimationBuffer: 1.4,   // 40% buffer for testnet
-    priorityProviders: Object.freeze([
-      'bsc-testnet',
-      'publicnode'
-    ]),
-    enableMevProtection: false,
-    mempoolMonitoring: false,
-    replacementPolicy: 'speed_up'
-  }),
-
-  // ── Avalanche Fuji Testnet (43113) ─────────────────────────
-  [CHAIN_IDS.AVALANCHE_FUJI]: Object.freeze({
-    strategy: BROADCAST_STRATEGIES.SINGLE,
-    maxRetries: 2,
-    retryDelay: 2000,           // 2 seconds
-    maxRetryDelay: 10000,       // max 10 seconds
-    exponentialBackoff: true,
-    timeout: 40000,             // 40 seconds
-    confirmationBlocks: 1,
-    gasEstimationBuffer: 1.3,   // 30% buffer for testnet
-    priorityProviders: Object.freeze([
-      'avalanche-fuji',
-      'publicnode'
-    ]),
-    enableMevProtection: false,
-    mempoolMonitoring: false,
-    replacementPolicy: 'speed_up'
-  }),
-
-  // ── Polygon Amoy Testnet (80002) ───────────────────────────
-  [CHAIN_IDS.POLYGON_AMOY]: Object.freeze({
-    strategy: BROADCAST_STRATEGIES.SINGLE,
-    maxRetries: 2,
-    retryDelay: 2000,           // 2 seconds
-    maxRetryDelay: 12000,       // max 12 seconds
-    exponentialBackoff: true,
-    timeout: 45000,             // 45 seconds
-    confirmationBlocks: 2,
-    gasEstimationBuffer: 1.4,   // 40% buffer for testnet
-    priorityProviders: Object.freeze([
-      'polygon-amoy',
-      'publicnode'
-    ]),
-    enableMevProtection: false,
-    mempoolMonitoring: false,
-    replacementPolicy: 'speed_up'
-  })
-});
-
-// ------------------------------------------------------------
-// Global broadcast configuration defaults
-// ------------------------------------------------------------
-export const GLOBAL_BROADCAST_CONFIG = Object.freeze({
-  // Default settings for unknown chains
-  defaultSettings: Object.freeze({
-    strategy: BROADCAST_STRATEGIES.SINGLE,
-    maxRetries: 3,
-    retryDelay: 2000,
-    maxRetryDelay: 10000,
-    exponentialBackoff: true,
-    timeout: 60000,
-    confirmationBlocks: 3,
-    gasEstimationBuffer: 1.2,
-    priorityProviders: Object.freeze(['publicnode']),
-    enableMevProtection: false,
-    mempoolMonitoring: false,
-    replacementPolicy: 'speed_up'
-  }),
-
-  // Monitoring and alerting configuration
-  monitoring: Object.freeze({
-    enableBroadcastMetrics: true,
-    trackSuccessRates: true,
-    alertOnHighFailureRate: true,
-    failureRateThreshold: 0.1, // 10% failure rate triggers alert
-    metricsRetentionDays: 7
-  }),
-
-  // Queue management
-  queueConfig: Object.freeze({
-    maxQueueSize: 1000,
-    processingInterval: 100,    // 100ms between queue processing
-    priorityLevels: 3,          // high, medium, low priority
-    enableQueuePersistence: true
-  }),
-
-  // Security settings
-  security: Object.freeze({
-    enableNonceManagement: true,
-    preventDuplicateTransactions: true,
-    maxPendingTransactions: 50,
-    enableTransactionAnalysis: true
-  })
-});
-
-// ------------------------------------------------------------
-// Helper functions for broadcast configuration
-// ------------------------------------------------------------
+const { ethers } = require('ethers');
 
 /**
- * Get broadcast settings for a specific chain
- * @param {number} chainId - The chain ID
- * @returns {Object} Broadcast settings for the chain
+ * Network-specific broadcasting configurations
  */
-export const getBroadcastSettings = (chainId) => {
-  return BROADCAST_SETTINGS[chainId] || GLOBAL_BROADCAST_CONFIG.defaultSettings;
+const NETWORK_CONFIGS = {
+  // Ethereum Mainnet
+  1: {
+    name: 'ethereum',
+    maxPriorityFeePerGas: ethers.parseUnits('2', 'gwei'),
+    maxFeePerGas: ethers.parseUnits('50', 'gwei'),
+    gasLimit: 21000,
+    blockTime: 12000, // 12 seconds
+    confirmations: 2,
+    mevProtection: true,
+    privateMempool: true,
+    priorityNodes: [
+      'https://eth-mainnet.g.alchemy.com/v2/',
+      'https://mainnet.infura.io/v3/',
+      'https://ethereum-rpc.publicnode.com',
+      'https://rpc.ankr.com/eth'
+    ]
+  },
+  
+  // Polygon Mainnet
+  137: {
+    name: 'polygon',
+    maxPriorityFeePerGas: ethers.parseUnits('30', 'gwei'),
+    maxFeePerGas: ethers.parseUnits('100', 'gwei'),
+    gasLimit: 21000,
+    blockTime: 2000, // 2 seconds
+    confirmations: 3,
+    mevProtection: true,
+    privateMempool: false,
+    priorityNodes: [
+      'https://polygon-mainnet.g.alchemy.com/v2/',
+      'https://polygon-mainnet.infura.io/v3/',
+      'https://polygon-bor-rpc.publicnode.com',
+      'https://rpc.ankr.com/polygon'
+    ]
+  },
+  
+  // Arbitrum One
+  42161: {
+    name: 'arbitrum',
+    maxPriorityFeePerGas: ethers.parseUnits('0.01', 'gwei'),
+    maxFeePerGas: ethers.parseUnits('1', 'gwei'),
+    gasLimit: 21000,
+    blockTime: 1000, // 1 second
+    confirmations: 2,
+    mevProtection: false, // Native protection
+    privateMempool: false,
+    priorityNodes: [
+      'https://arb-mainnet.g.alchemy.com/v2/',
+      'https://arbitrum-mainnet.infura.io/v3/',
+      'https://arbitrum-one-rpc.publicnode.com',
+      'https://rpc.ankr.com/arbitrum'
+    ]
+  },
+  
+  // Optimism
+  10: {
+    name: 'optimism',
+    maxPriorityFeePerGas: ethers.parseUnits('0.001', 'gwei'),
+    maxFeePerGas: ethers.parseUnits('1', 'gwei'),
+    gasLimit: 21000,
+    blockTime: 2000, // 2 seconds
+    confirmations: 2,
+    mevProtection: false, // Native protection
+    privateMempool: false,
+    priorityNodes: [
+      'https://opt-mainnet.g.alchemy.com/v2/',
+      'https://optimism-mainnet.infura.io/v3/',
+      'https://optimism-rpc.publicnode.com',
+      'https://rpc.ankr.com/optimism'
+    ]
+  },
+  
+  // Avalanche C-Chain
+  43114: {
+    name: 'avalanche',
+    maxPriorityFeePerGas: ethers.parseUnits('2', 'gwei'),
+    maxFeePerGas: ethers.parseUnits('30', 'gwei'),
+    gasLimit: 21000,
+    blockTime: 2000, // 2 seconds
+    confirmations: 2,
+    mevProtection: true,
+    privateMempool: false,
+    priorityNodes: [
+      'https://api.avax.network/ext/bc/C/rpc',
+      'https://avalanche-mainnet.infura.io/v3/',
+      'https://rpc.ankr.com/avalanche',
+      'https://avax.meowrpc.com'
+    ]
+  },
+  
+  // BSC Mainnet
+  56: {
+    name: 'bsc',
+    maxPriorityFeePerGas: ethers.parseUnits('1', 'gwei'),
+    maxFeePerGas: ethers.parseUnits('5', 'gwei'),
+    gasLimit: 21000,
+    blockTime: 3000, // 3 seconds
+    confirmations: 3,
+    mevProtection: true,
+    privateMempool: false,
+    priorityNodes: [
+      'https://bsc-dataseed1.binance.org',
+      'https://bsc-dataseed2.binance.org',
+      'https://rpc.ankr.com/bsc',
+      'https://bsc.publicnode.com'
+    ]
+  },
+  
+  // Base Mainnet
+  8453: {
+    name: 'base',
+    maxPriorityFeePerGas: ethers.parseUnits('0.001', 'gwei'),
+    maxFeePerGas: ethers.parseUnits('1', 'gwei'),
+    gasLimit: 21000,
+    blockTime: 2000, // 2 seconds
+    confirmations: 2,
+    mevProtection: false,
+    privateMempool: false,
+    priorityNodes: [
+      'https://base-mainnet.g.alchemy.com/v2/',
+      'https://mainnet.base.org',
+      'https://base.publicnode.com',
+      'https://rpc.ankr.com/base'
+    ]
+  }
 };
 
 /**
- * Check if a chain supports MEV protection
- * @param {number} chainId - The chain ID
- * @returns {boolean} True if MEV protection is enabled
+ * MEV Protection Configuration
  */
-export const supportsMevProtection = (chainId) => {
-  const settings = getBroadcastSettings(chainId);
-  return settings.enableMevProtection;
+const MEV_PROTECTION = {
+  enabled: true,
+  
+  // Flashbots Protect (Ethereum)
+  flashbots: {
+    enabled: true,
+    endpoint: 'https://rpc.flashbots.net',
+    bundleEndpoint: 'https://relay.flashbots.net',
+    maxBlocksAhead: 25,
+    simulate: true
+  },
+  
+  // Private Mempools
+  privateMempools: {
+    ethereum: [
+      'https://rpc.flashbots.net',
+      'https://api.securerpc.com/v1',
+      'https://rpc.builder0x69.io'
+    ],
+    polygon: [
+      'https://polygon.flashbots.net'
+    ],
+    bsc: [
+      'https://bsc.flashbots.net'
+    ]
+  },
+  
+  // Slippage Protection
+  slippageProtection: {
+    maxSlippage: 0.5, // 0.5%
+    dynamicSlippage: true,
+    frontrunProtection: true,
+    sandwichProtection: true
+  },
+  
+  // Gas Price Protection
+  gasPriceProtection: {
+    maxGasPriceMultiplier: 2.0,
+    dynamicGasAdjustment: true,
+    mempoolAnalysis: true,
+    gasTokenOptimization: true
+  }
 };
 
 /**
- * Get retry configuration for a specific chain
- * @param {number} chainId - The chain ID
- * @returns {Object} Retry configuration
+ * Transaction Broadcasting Strategies
  */
-export const getRetryConfig = (chainId) => {
-  const settings = getBroadcastSettings(chainId);
-  return {
-    maxRetries: settings.maxRetries,
-    retryDelay: settings.retryDelay,
-    maxRetryDelay: settings.maxRetryDelay,
-    exponentialBackoff: settings.exponentialBackoff
-  };
+const BROADCAST_STRATEGIES = {
+  // Single broadcast to fastest node
+  single: {
+    timeout: 30000, // 30 seconds
+    retries: 3,
+    backoffMultiplier: 1.5,
+    jitter: true
+  },
+  
+  // Parallel broadcast to multiple nodes
+  parallel: {
+    nodeCount: 3,
+    successThreshold: 1,
+    timeout: 15000,
+    aggregateResults: true
+  },
+  
+  // Failover with escalation
+  failover: {
+    primaryTimeout: 10000,
+    escalationDelay: 5000,
+    maxEscalations: 3,
+    escalationGasMultiplier: 1.2
+  },
+  
+  // Multi-broadcast with consensus
+  consensus: {
+    nodeCount: 5,
+    consensusThreshold: 3,
+    timeout: 20000,
+    conflictResolution: 'majority'
+  }
 };
 
 /**
- * Get timeout configuration for a specific chain
- * @param {number} chainId - The chain ID
- * @returns {number} Timeout in milliseconds
+ * Retry Logic Configuration
  */
-export const getBroadcastTimeout = (chainId) => {
-  const settings = getBroadcastSettings(chainId);
-  return settings.timeout;
+const RETRY_CONFIG = {
+  maxRetries: 5,
+  baseDelay: 1000, // 1 second
+  maxDelay: 30000, // 30 seconds
+  backoffStrategy: 'exponential',
+  jitter: true,
+  
+  // Retry conditions
+  retryConditions: [
+    'TIMEOUT',
+    'NETWORK_ERROR',
+    'NONCE_TOO_LOW',
+    'REPLACEMENT_UNDERPRICED',
+    'SERVER_ERROR'
+  ],
+  
+  // Non-retry conditions
+  nonRetryConditions: [
+    'INSUFFICIENT_FUNDS',
+    'GAS_LIMIT_EXCEEDED',
+    'INVALID_SIGNATURE',
+    'INVALID_NONCE'
+  ],
+  
+  // Dynamic retry delays by network
+  networkDelays: {
+    1: 3000,     // Ethereum
+    137: 1000,   // Polygon
+    42161: 500,  // Arbitrum
+    10: 1000,    // Optimism
+    43114: 1000, // Avalanche
+    56: 2000,    // BSC
+    8453: 1000   // Base
+  }
 };
 
 /**
- * Get gas estimation buffer for a specific chain
- * @param {number} chainId - The chain ID
- * @returns {number} Gas buffer multiplier (e.g., 1.2 for 20% buffer)
+ * Gas Optimization Settings
  */
-export const getGasBuffer = (chainId) => {
-  const settings = getBroadcastSettings(chainId);
-  return settings.gasEstimationBuffer;
+const GAS_OPTIMIZATION = {
+  enabled: true,
+  
+  // Dynamic gas pricing
+  dynamicPricing: {
+    enabled: true,
+    algorithm: 'eip1559',
+    percentileTarget: 50,
+    historicalBlocks: 20,
+    urgencyMultiplier: {
+      slow: 0.8,
+      standard: 1.0,
+      fast: 1.5,
+      instant: 2.0
+    }
+  },
+  
+  // Gas estimation
+  estimation: {
+    bufferPercentage: 10, // 10% buffer
+    minimumGasLimit: 21000,
+    maximumGasLimit: 10000000,
+    simulationEnabled: true,
+    fallbackMultiplier: 1.2
+  },
+  
+  // Gas token optimization
+  gasTokens: {
+    enabled: true,
+    supportedTokens: ['CHI', 'GST2'],
+    minSavingsThreshold: 0.05, // 5% savings
+    automaticBurn: true
+  }
 };
 
 /**
- * Get confirmation blocks required for a specific chain
- * @param {number} chainId - The chain ID
- * @returns {number} Number of confirmation blocks
+ * Transaction Pool Management
  */
-export const getConfirmationBlocks = (chainId) => {
-  const settings = getBroadcastSettings(chainId);
-  return settings.confirmationBlocks;
+const TRANSACTION_POOL = {
+  maxPoolSize: 1000,
+  maxPendingPerAddress: 100,
+  cleanupInterval: 300000, // 5 minutes
+  
+  // Priority queues
+  priorityQueues: {
+    high: { maxSize: 50, maxWaitTime: 60000 },
+    medium: { maxSize: 200, maxWaitTime: 300000 },
+    low: { maxSize: 750, maxWaitTime: 1800000 }
+  },
+  
+  // Pool policies
+  policies: {
+    replacementPolicy: 'gas_price',
+    evictionPolicy: 'lru',
+    duplicateHandling: 'replace',
+    staleTransactionTimeout: 3600000 // 1 hour
+  }
 };
 
 /**
- * Get priority providers for a specific chain
- * @param {number} chainId - The chain ID
- * @returns {Array} Array of priority provider names
+ * Monitoring & Analytics Configuration
  */
-export const getPriorityProviders = (chainId) => {
-  const settings = getBroadcastSettings(chainId);
-  return settings.priorityProviders;
+const MONITORING_CONFIG = {
+  enabled: true,
+  
+  // Performance metrics
+  metrics: {
+    broadcastLatency: true,
+    confirmationTime: true,
+    gasEfficiency: true,
+    mevProtectionRate: true,
+    successRate: true
+  },
+  
+  // Alerting thresholds
+  alerts: {
+    highLatency: 30000, // 30 seconds
+    lowSuccessRate: 0.95, // 95%
+    highGasPrice: 100, // 100 gwei
+    mempoolCongestion: 0.8 // 80% full
+  },
+  
+  // Logging configuration
+  logging: {
+    level: 'info',
+    includeTransactionHashes: true,
+    includeTiming: true,
+    rotationSize: '100MB',
+    retentionDays: 30
+  }
 };
 
 /**
- * Check if mempool monitoring is enabled for a chain
- * @param {number} chainId - The chain ID
- * @returns {boolean} True if mempool monitoring is enabled
+ * Security & Anti-Fraud Configuration
  */
-export const isMempoolMonitoringEnabled = (chainId) => {
-  const settings = getBroadcastSettings(chainId);
-  return settings.mempoolMonitoring;
+const SECURITY_CONFIG = {
+  // Transaction validation
+  validation: {
+    checksumValidation: true,
+    balanceValidation: true,
+    nonceValidation: true,
+    gasLimitValidation: true,
+    signatureValidation: true
+  },
+  
+  // Anti-fraud measures
+  antiFraud: {
+    velocityLimits: {
+      perMinute: 10,
+      perHour: 100,
+      perDay: 1000
+    },
+    
+    amountLimits: {
+      singleTransaction: ethers.parseEther('100'),
+      dailyLimit: ethers.parseEther('1000'),
+      weeklyLimit: ethers.parseEther('5000')
+    },
+    
+    suspiciousPatterns: {
+      rapidFireDetection: true,
+      duplicateDetection: true,
+      abnormalGasDetection: true
+    }
+  },
+  
+  // Encryption & Privacy
+  privacy: {
+    encryptBroadcastData: true,
+    anonymizeMetrics: true,
+    vpnDetection: true,
+    torDetection: true
+  }
 };
 
 /**
- * Get replacement policy for failed transactions
- * @param {number} chainId - The chain ID
- * @returns {string} Replacement policy ('cancel' | 'speed_up' | 'increase_gas')
+ * Development & Testing Configuration
  */
-export const getReplacementPolicy = (chainId) => {
-  const settings = getBroadcastSettings(chainId);
-  return settings.replacementPolicy;
+const DEVELOPMENT_CONFIG = {
+  // Testing overrides
+  testing: {
+    enabled: process.env.NODE_ENV === 'test',
+    mockBroadcasts: false,
+    testNetworkOverrides: {
+      gasLimit: 8000000,
+      gasPrice: ethers.parseUnits('20', 'gwei')
+    }
+  },
+  
+  // Debug features
+  debugging: {
+    verboseLogging: process.env.NODE_ENV === 'development',
+    transactionTracing: true,
+    performanceProfiling: true,
+    memoryMonitoring: true
+  }
 };
 
 /**
- * Get all supported chain IDs for broadcasting
- * @returns {Array} Array of supported chain IDs
+ * Environment-specific overrides
  */
-export const getSupportedBroadcastChains = () => {
-  return Object.keys(BROADCAST_SETTINGS).map(Number);
+const ENVIRONMENT_OVERRIDES = {
+  production: {
+    'MEV_PROTECTION.enabled': true,
+    'RETRY_CONFIG.maxRetries': 3,
+    'MONITORING_CONFIG.logging.level': 'warn'
+  },
+  
+  staging: {
+    'MEV_PROTECTION.enabled': true,
+    'RETRY_CONFIG.maxRetries': 5,
+    'MONITORING_CONFIG.logging.level': 'info'
+  },
+  
+  development: {
+    'MEV_PROTECTION.enabled': false,
+    'RETRY_CONFIG.maxRetries': 2,
+    'MONITORING_CONFIG.logging.level': 'debug'
+  }
 };
 
 /**
- * Get global broadcast configuration
- * @returns {Object} Global configuration settings
+ * Export comprehensive broadcasting configuration
  */
-export const getGlobalBroadcastConfig = () => {
-  return GLOBAL_BROADCAST_CONFIG;
+module.exports = {
+  NETWORK_CONFIGS,
+  MEV_PROTECTION,
+  BROADCAST_STRATEGIES,
+  RETRY_CONFIG,
+  GAS_OPTIMIZATION,
+  TRANSACTION_POOL,
+  MONITORING_CONFIG,
+  SECURITY_CONFIG,
+  DEVELOPMENT_CONFIG,
+  ENVIRONMENT_OVERRIDES,
+  
+  /**
+   * Get network-specific configuration
+   * @param {number} chainId - Network chain ID
+   * @returns {object} Network configuration
+   */
+  getNetworkConfig(chainId) {
+    const config = NETWORK_CONFIGS[chainId];
+    if (!config) {
+      throw new Error(`Unsupported network: ${chainId}`);
+    }
+    return config;
+  },
+  
+  /**
+   * Get broadcasting strategy configuration
+   * @param {string} strategy - Strategy name
+   * @returns {object} Strategy configuration
+   */
+  getStrategyConfig(strategy) {
+    const config = BROADCAST_STRATEGIES[strategy];
+    if (!config) {
+      throw new Error(`Unknown strategy: ${strategy}`);
+    }
+    return config;
+  },
+  
+  /**
+   * Apply environment-specific overrides
+   * @param {object} config - Base configuration
+   * @param {string} environment - Environment name
+   * @returns {object} Modified configuration
+   */
+  applyEnvironmentOverrides(config, environment = process.env.NODE_ENV) {
+    const overrides = ENVIRONMENT_OVERRIDES[environment];
+    if (!overrides) return config;
+    
+    const result = { ...config };
+    Object.entries(overrides).forEach(([path, value]) => {
+      const keys = path.split('.');
+      let current = result;
+      for (let i = 0; i < keys.length - 1; i++) {
+        current = current[keys[i]];
+      }
+      current[keys[keys.length - 1]] = value;
+    });
+    
+    return result;
+  },
+  
+  /**
+   * Validate configuration integrity
+   * @returns {boolean} Validation result
+   */
+  validateConfig() {
+    try {
+      // Validate network configurations
+      Object.entries(NETWORK_CONFIGS).forEach(([chainId, config]) => {
+        if (!config.name || !config.priorityNodes || config.priorityNodes.length === 0) {
+          throw new Error(`Invalid network config for chain ${chainId}`);
+        }
+      });
+      
+      // Validate retry configuration
+      if (RETRY_CONFIG.maxRetries < 1 || RETRY_CONFIG.baseDelay < 100) {
+        throw new Error('Invalid retry configuration');
+      }
+      
+      // Validate gas optimization
+      if (GAS_OPTIMIZATION.estimation.bufferPercentage < 0 || 
+          GAS_OPTIMIZATION.estimation.bufferPercentage > 100) {
+        throw new Error('Invalid gas optimization configuration');
+      }
+      
+      return true;
+    } catch (error) {
+      console.error('Configuration validation failed:', error.message);
+      return false;
+    }
+  }
 };
+
+// Validate configuration on module load
+if (!module.exports.validateConfig()) {
+  throw new Error('Broadcast configuration validation failed');
+}
