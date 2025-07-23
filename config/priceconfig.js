@@ -1,5 +1,6 @@
+
 /**
- * Trust Wallet Extension - Price Configuration
+ * Trust Crypto Wallet Extension - Price Configuration
  * Production-grade price feed configuration with multiple oracle support
  * Supports Chainlink, DEX, and centralized exchange price feeds
  */
@@ -28,7 +29,7 @@ export class PriceConfig {
      */
     async initialize() {
         try {
-            logger.info('Initializing price configuration...');
+            logger.info('Initializing price configuration for Trust Crypto Wallet Extension...');
             
             await this.setupChainlinkFeeds();
             await this.setupDEXPairs();
@@ -38,7 +39,7 @@ export class PriceConfig {
             this.startPriceUpdates();
             
             this.initialized = true;
-            logger.info('Price configuration initialized successfully');
+            logger.info('Price configuration initialized successfully for Trust Crypto Wallet Extension');
 
         } catch (error) {
             logger.error('Failed to initialize price configuration:', error);
@@ -231,7 +232,7 @@ export class PriceConfig {
      * @returns {Promise<void>}
      */
     async initializeFallback() {
-        logger.warn('Using fallback price configuration');
+        logger.warn('Using fallback price configuration for Trust Crypto Wallet Extension');
         
         // Minimal Chainlink feeds
         const fallbackFeeds = new Map([
