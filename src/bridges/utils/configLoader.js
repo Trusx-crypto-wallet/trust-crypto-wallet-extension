@@ -1,476 +1,343 @@
-// src/bridges/utils/configLoader.js
-// Production-grade bridge configuration loader
-// Loads and manages bridge configurations for protocol implementations
-
-const { 
-  bridgeConfig, 
-  getNetworkByChainId, 
-  getNetworkByKey,
-  getBridgeContract,
-  doesNetworkSupportBridge,
-  getAllNetworks,
-  validateBridgeConfig,
-  healthCheck
-} = require('../../../config');
-
 /**
- * Bridge Configuration Loader
- * Provides centralized access to bridge configurations for protocol implementations
+ * Contract Loader Utility
+ * Production-ready contract loading with dependency injection, retry logic, and comprehensive error handling.
+ * Loads and manages contract instances, ABIs, and deployment artifacts with advanced caching and provider management.
  */
-class BridgeConfigLoader {
-  constructor() {
-    this.config = null;
-    this.isInitialized = false;
-    this.lastValidation = null;
-    this.contractCache = new Map();
-    this.networkCache = new Map();
-    
-    // Initialize on construction
-    this.initialize();
+
+const { ethers } = require('ethers');
+const LRU = require('lru-cache');
+const pLimit = require('p-limit');
+const { BridgeErrors } = require('../../errors/BridgeErrors');
+
+class ContractLoader {
+  constructor({ configLoader, logger, metrics, signerProvider = null, retryConfig = {} }) {
+    this.configLoader = configLoader;
+    this.logger = logger;
+    this.metrics = metrics;
+    this.signerProvider = signerProvider;
+
+    this.retryConfig = {
+      retries: retryConfig.retries ?? 3,
+      initialDelayMs: retryConfig.initialDelayMs ?? 500,
+      maxDelayMs: retryConfig.maxDelayMs ?? 2000
+    };
+
+    this.contractCache = new LRU({ max: 500, ttl: 15 * 60 * 1000 });
+    this.providerCache = new LRU({ max: 50, ttl: 30 * 60 * 1000 });
+    this.abiCache = new LRU({ max: 200, ttl: 60 * 60 * 1000 });
+    this.concurrency = pLimit(8);
+
+    this.networkConfigs = this.configLoader.getNetworkConfigs(); // pulled from DI
+    this.contractInterfaces = new Map();
+    this.signerCache = new Map();
   }
 
-  /**
-   * Initialize the configuration loader
-   * @returns {Promise<boolean>} Initialization success
-   */
-  async initialize() {
-    try {
-      console.log('🔧 Initializing Bridge Configuration Loader...');
-      
-      // Validate configuration on load
-      const validation = validateBridgeConfig();
-      
-      if (!validation.isValid) {
-        throw new Error(`Configuration validation failed: ${validation.errors.join(', ')}`);
+  async loadContract(bridgeKey, network, options = {}) {
+    const cacheKey = `${bridgeKey}-${network}`;
+    if (!options.forceReload && this.contractCache.has(cacheKey)) {
+      const cached = this.contractCache.get(cacheKey);
+      if (await this._isContractValid(cached)) {
+        this.metrics.increment('contract_loader.cache_hit', { bridge: bridgeKey, network });
+        return cached;
       }
-      
-      this.config = bridgeConfig;
-      this.lastValidation = validation;
-      this.isInitialized = true;
-      
-      // Pre-populate caches for performance
-      await this.prePopulateCaches();
-      
-      console.log('✅ Bridge Configuration Loader initialized successfully');
-      console.log(`   📊 Networks: ${Object.keys(this.config.networks || {}).length}`);
-      console.log(`   🌉 Bridges: ${Object.keys(this.config.bridges || {}).length}`);
-      console.log(`   🪙 Tokens: ${Object.keys(this.config.tokens || {}).length}`);
-      
-      return true;
+      this.contractCache.delete(cacheKey);
+      this.logger.warn(`Invalid cache entry, reloading: ${cacheKey}`);
+    }
+
+    const deployment = this.configLoader.getDeploymentInfo(bridgeKey, network);
+    const abi = this.configLoader.getExpectedAbi(bridgeKey);
+    const provider = await this._getProviderWithRetry(network, options.timeout);
+
+    const contract = new ethers.Contract(deployment.address, abi, provider);
+
+    if (options.attachSigner) {
+      const signer = await this._getSigner(network, options.signerAddress);
+      contract.connect(signer);
+    }
+
+    if (options.verifyExists !== false) {
+      await this._verifyContractExists(contract, deployment.address, network, abi);
+    }
+
+    const metadata = await this._getContractMetadata(contract, deployment, bridgeKey, network);
+    const instance = { contract, abi, address: deployment.address, network, provider, metadata };
+    this.contractCache.set(cacheKey, instance);
+
+    this.metrics.increment('contract_loader.load_success', { bridge: bridgeKey, network });
+    this.logger.info(`Loaded contract ${bridgeKey} on ${network} at ${deployment.address}`);
+    return instance;
+  }
+
+  async _getProviderWithRetry(network, timeout = 10000) {
+    const cfg = this.networkConfigs[network];
+    if (!cfg) throw new BridgeErrors.NetworkError(`Invalid network ${network}`);
+
+    const urls = [cfg.rpc, ...cfg.fallbackRpcs];
+    let attempt = 0, delay = this.retryConfig.initialDelayMs;
+    let lastErr;
+
+    while (attempt < this.retryConfig.retries) {
+      for (const url of urls) {
+        try {
+          const provider = new ethers.providers.JsonRpcProvider({ url, timeout });
+          const net = await provider.getNetwork();
+          if (net.chainId !== cfg.chainId) throw new Error('chainId mismatch');
+          await provider.getBlockNumber();
+          this.providerCache.set(`provider-${network}`, { provider, url });
+          this.metrics.increment('contract_loader.provider_connected', { network, url });
+          return provider;
+        } catch (err) {
+          lastErr = err;
+          this.metrics.increment('contract_loader.provider_failed', { network, url, error: err.message });
+          this.logger.warn(`Provider failed (${url}): ${err.message}`);
+        }
+      }
+      await new Promise(r => setTimeout(r, delay));
+      delay = Math.min(delay * 2, this.retryConfig.maxDelayMs);
+      attempt++;
+    }
+
+    throw new BridgeErrors.NetworkError(`Failed to connect to ${network}: ${lastErr.message}`);
+  }
+
+  async _getSigner(network, signerAddress) {
+    if (!this.signerProvider) {
+      throw new BridgeErrors.ContractLoadError('No signerProvider injected');
+    }
+    const key = `${network}:${signerAddress || 'default'}`;
+    if (this.signerCache.has(key)) return this.signerCache.get(key);
+    const signer = await this.signerProvider.getSigner({ network, address: signerAddress });
+    this.signerCache.set(key, signer);
+    return signer;
+  }
+
+  // _verifyContractExists optionally validates on-chain code size vs ABI heuristics
+  async _verifyContractExists(contract, address, network, abi) {
+    const code = await contract.provider.getCode(address);
+    if (code === '0x') throw new BridgeErrors.ContractLoadError('No on-chain code');
+    // optional: check that bytecode length > expected minimum from ABI
+  }
+
+  async _getContractMetadata(contract, deployment, bridgeKey, network) {
+    try {
+      const metadata = {
+        functions: contract.interface.fragments.filter(f => f.type === 'function').length,
+        events: contract.interface.fragments.filter(f => f.type === 'event').length,
+        hasReceive: contract.interface.fragments.some(f => f.type === 'receive'),
+        hasFallback: contract.interface.fragments.some(f => f.type === 'fallback'),
+        isPayable: contract.interface.fragments.some(f => f.payable === true),
+        bridgeKey,
+        deploymentBlock: deployment.blockNumber,
+        deploymentTx: deployment.txHash,
+        version: deployment.version,
+        loadedAt: new Date().toISOString()
+      };
+
+      // Try to get additional contract info if standard functions exist
+      try {
+        if (contract.name && typeof contract.name === 'function') {
+          metadata.name = await contract.name();
+        }
+        if (contract.symbol && typeof contract.symbol === 'function') {
+          metadata.symbol = await contract.symbol();
+        }
+        if (contract.decimals && typeof contract.decimals === 'function') {
+          metadata.decimals = await contract.decimals();
+        }
+        if (contract.totalSupply && typeof contract.totalSupply === 'function') {
+          metadata.totalSupply = (await contract.totalSupply()).toString();
+        }
+      } catch (error) {
+        // These are optional metadata fields
+        this.logger.debug(`Could not fetch optional contract metadata: ${error.message}`);
+      }
+
+      return metadata;
     } catch (error) {
-      console.error('❌ Bridge Configuration Loader initialization failed:', error.message);
-      this.isInitialized = false;
+      this.logger.warn(`Failed to get contract metadata: ${error.message}`);
+      return {
+        functions: 0,
+        events: 0,
+        hasReceive: false,
+        hasFallback: false,
+        isPayable: false,
+        bridgeKey,
+        loadedAt: new Date().toISOString()
+      };
+    }
+  }
+
+  async _isContractValid(contractInstance) {
+    try {
+      // Check if provider is still connected
+      if (!await this._isProviderHealthy(contractInstance.provider)) {
+        return false;
+      }
+
+      // Verify contract still exists
+      const code = await contractInstance.provider.getCode(contractInstance.address);
+      return code !== '0x';
+    } catch (error) {
+      this.logger.debug(`Contract validity check failed: ${error.message}`);
+      return false;
+    }
+  }
+
+  async _isProviderHealthy(provider) {
+    try {
+      const blockNumber = await Promise.race([
+        provider.getBlockNumber(),
+        new Promise((_, reject) => 
+          setTimeout(() => reject(new Error('Health check timeout')), 5000)
+        )
+      ]);
+      return typeof blockNumber === 'number' && blockNumber > 0;
+    } catch (error) {
+      return false;
+    }
+  }
+
+  async loadMultipleContracts(requests) {
+    try {
+      if (!Array.isArray(requests) || requests.length === 0) {
+        throw new BridgeErrors.InvalidParametersError('Requests must be a non-empty array');
+      }
+
+      const maxBatchSize = 50;
+      if (requests.length > maxBatchSize) {
+        throw new BridgeErrors.InvalidParametersError(`Batch size exceeds maximum: ${requests.length} > ${maxBatchSize}`);
+      }
+
+      const loadingPromises = requests.map(({ bridgeKey, network, options = {} }) =>
+        this.concurrency(() => 
+          this.loadContract(bridgeKey, network, options).catch(error => ({
+            error: error.message,
+            bridgeKey,
+            network,
+            failed: true
+          }))
+        )
+      );
+
+      const results = await Promise.all(loadingPromises);
+      const successful = results.filter(result => !result.failed);
+      const failed = results.filter(result => result.failed);
+
+      this.metrics.increment('contract_loader.batch_load', {
+        count: requests.length,
+        successful: successful.length,
+        failed: failed.length
+      });
+
+      if (failed.length > 0) {
+        this.logger.warn(`Batch contract loading completed with ${failed.length} failures:`, 
+          failed.map(f => `${f.bridgeKey}:${f.network} - ${f.error}`)
+        );
+      }
+
+      return {
+        contracts: successful,
+        failures: failed,
+        stats: {
+          total: requests.length,
+          successful: successful.length,
+          failed: failed.length
+        }
+      };
+
+    } catch (error) {
+      this.logger.error('Batch contract loading failed:', error);
+      this.metrics.increment('contract_loader.batch_load_error', {
+        error: error.message
+      });
       throw error;
     }
   }
 
-  /**
-   * Pre-populate caches for better performance
-   */
-  async prePopulateCaches() {
+  getContractABI(bridgeKey) {
     try {
-      // Cache all networks
-      const networks = getAllNetworks();
-      networks.forEach(network => {
-        this.networkCache.set(network.chainId, network);
-        this.networkCache.set(network.key, network);
-      });
-
-      // Cache bridge contracts
-      const bridges = Object.keys(this.config.bridges || {});
-      bridges.forEach(bridgeKey => {
-        networks.forEach(network => {
-          const contract = getBridgeContract(network.key, bridgeKey);
-          if (contract) {
-            const cacheKey = `${bridgeKey}-${network.key}`;
-            this.contractCache.set(cacheKey, contract);
-          }
-        });
-      });
-
-      console.log(`📦 Cached ${this.networkCache.size} network entries and ${this.contractCache.size} contract entries`);
-    } catch (error) {
-      console.warn('⚠️ Cache pre-population failed:', error.message);
-    }
-  }
-
-  /**
-   * Ensure loader is initialized
-   */
-  ensureInitialized() {
-    if (!this.isInitialized) {
-      throw new Error('BridgeConfigLoader not initialized. Call initialize() first.');
-    }
-  }
-
-  /**
-   * Get bridge configuration for a specific protocol
-   * @param {string} bridgeKey - Bridge identifier (e.g., 'layerzeroV1', 'layerzeroV2')
-   * @returns {Object|null} Bridge configuration
-   */
-  getBridgeConfig(bridgeKey) {
-    this.ensureInitialized();
-    
-    if (!bridgeKey || typeof bridgeKey !== 'string') {
-      throw new Error('Bridge key must be a non-empty string');
-    }
-
-    const bridge = this.config.bridges?.[bridgeKey];
-    
-    if (!bridge) {
-      console.warn(`⚠️ Bridge configuration not found for: ${bridgeKey}`);
-      return null;
-    }
-
-    return {
-      key: bridgeKey,
-      name: bridge.name,
-      version: bridge.version,
-      contracts: bridge.contracts || {},
-      isActive: this.isBridgeActive(bridgeKey),
-      supportedNetworks: Object.keys(bridge.contracts || {}),
-      metadata: {
-        type: this.getBridgeType(bridgeKey),
-        isLayerZero: bridgeKey.includes('layerzero'),
-        configuredAt: new Date().toISOString()
-      }
-    };
-  }
-
-  /**
-   * Get contract address for a bridge on a specific network
-   * @param {string} bridgeKey - Bridge identifier
-   * @param {string|number} network - Network key or chain ID
-   * @param {string} contractType - Contract type ('endpoint', 'router', etc.)
-   * @returns {string|null} Contract address
-   */
-  getContractAddress(bridgeKey, network, contractType = 'endpoint') {
-    this.ensureInitialized();
-    
-    try {
-      // Try cache first
-      const cacheKey = `${bridgeKey}-${network}-${contractType}`;
-      if (this.contractCache.has(cacheKey)) {
-        return this.contractCache.get(cacheKey);
-      }
-
-      // Resolve network key
-      const networkKey = typeof network === 'number' 
-        ? this.getNetworkKey(network)
-        : network;
-
-      if (!networkKey) {
-        console.warn(`⚠️ Network not found: ${network}`);
-        return null;
-      }
-
-      const contract = getBridgeContract(networkKey, bridgeKey, contractType);
+      const cacheKey = `abi-${bridgeKey}`;
       
-      // Cache the result
-      if (contract) {
-        this.contractCache.set(cacheKey, contract);
+      if (this.abiCache.has(cacheKey)) {
+        return this.abiCache.get(cacheKey);
       }
+
+      const abi = this.configLoader.getExpectedAbi(bridgeKey);
+      this.abiCache.set(cacheKey, abi);
       
-      return contract;
+      return abi;
     } catch (error) {
-      console.error(`❌ Error getting contract address for ${bridgeKey} on ${network}:`, error.message);
-      return null;
+      throw new BridgeErrors.ContractLoadError(`ABI not found for ${bridgeKey}: ${error.message}`);
     }
   }
 
-  /**
-   * Get network configuration by chain ID or key
-   * @param {string|number} identifier - Network key or chain ID
-   * @returns {Object|null} Network configuration
-   */
-  getNetworkConfig(identifier) {
-    this.ensureInitialized();
+  getContractInterface(bridgeKey) {
+    if (this.contractInterfaces.has(bridgeKey)) {
+      return this.contractInterfaces.get(bridgeKey);
+    }
+
+    const abi = this.getContractABI(bridgeKey);
+    const iface = new ethers.utils.Interface(abi);
+    this.contractInterfaces.set(bridgeKey, iface);
     
-    try {
-      // Try cache first
-      if (this.networkCache.has(identifier)) {
-        return this.networkCache.get(identifier);
-      }
-
-      // Get from config utilities
-      const network = typeof identifier === 'number'
-        ? getNetworkByChainId(identifier)
-        : getNetworkByKey(identifier);
-
-      // Cache the result
-      if (network) {
-        this.networkCache.set(identifier, network);
-        this.networkCache.set(network.chainId, network);
-        this.networkCache.set(network.key, network);
-      }
-
-      return network;
-    } catch (error) {
-      console.error(`❌ Error getting network config for ${identifier}:`, error.message);
-      return null;
-    }
+    return iface;
   }
 
-  /**
-   * Get network key from chain ID
-   * @param {number} chainId - EVM chain ID
-   * @returns {string|null} Network key
-   */
-  getNetworkKey(chainId) {
-    const network = this.getNetworkConfig(chainId);
-    return network?.key || null;
+  isContractLoaded(bridgeKey, network) {
+    const cacheKey = `${bridgeKey}-${network}`;
+    return this.contractCache.has(cacheKey);
   }
 
-  /**
-   * Get LayerZero chain ID for a network
-   * @param {string|number} network - Network key or chain ID
-   * @returns {number|null} LayerZero chain ID
-   */
-  getLayerZeroChainId(network) {
-    const networkConfig = this.getNetworkConfig(network);
-    return networkConfig?.layerZeroChainId || null;
-  }
-
-  /**
-   * Get token configuration
-   * @param {string} tokenSymbol - Token symbol (e.g., 'USDT')
-   * @returns {Object|null} Token configuration
-   */
-  getTokenConfig(tokenSymbol) {
-    this.ensureInitialized();
-    
-    if (!tokenSymbol || typeof tokenSymbol !== 'string') {
-      return null;
-    }
-
-    const tokenConfig = this.config.tokens?.[tokenSymbol.toUpperCase()];
-    
-    if (!tokenConfig) {
-      return null;
-    }
-
-    return {
-      symbol: tokenSymbol.toUpperCase(),
-      bridgeSupport: tokenConfig.bridgeSupport || {},
-      contracts: tokenConfig.contracts || {},
-      decimals: tokenConfig.decimals,
-      supportedBridges: Object.keys(tokenConfig.bridgeSupport || {}).filter(
-        bridge => tokenConfig.bridgeSupport[bridge] === true
-      )
-    };
-  }
-
-  /**
-   * Get custom contract address for a token on a network
-   * @param {string} tokenSymbol - Token symbol
-   * @param {string|number} network - Network key or chain ID
-   * @returns {string|null} Contract address
-   */
-  getCustomContractAddress(tokenSymbol, network) {
-    this.ensureInitialized();
-    
-    const networkKey = typeof network === 'number' 
-      ? this.getNetworkKey(network)
-      : network;
-
-    if (!networkKey) {
-      return null;
-    }
-
-    return this.config.customContracts?.[tokenSymbol]?.[networkKey] || null;
-  }
-
-  /**
-   * Check if a bridge supports a specific token
-   * @param {string} bridgeKey - Bridge identifier
-   * @param {string} tokenSymbol - Token symbol
-   * @returns {boolean} Whether bridge supports token
-   */
-  doesBridgeSupportToken(bridgeKey, tokenSymbol) {
-    const tokenConfig = this.getTokenConfig(tokenSymbol);
-    return tokenConfig?.bridgeSupport?.[bridgeKey] === true;
-  }
-
-  /**
-   * Check if a network supports a specific bridge
-   * @param {string|number} network - Network key or chain ID
-   * @param {string} bridgeKey - Bridge identifier
-   * @returns {boolean} Whether network supports bridge
-   */
-  doesNetworkSupportBridge(network, bridgeKey) {
-    const networkKey = typeof network === 'number' 
-      ? this.getNetworkKey(network)
-      : network;
-
-    if (!networkKey) {
-      return false;
-    }
-
-    return doesNetworkSupportBridge(networkKey, bridgeKey);
-  }
-
-  /**
-   * Get all supported bridges for a token between two networks
-   * @param {string} tokenSymbol - Token symbol
-   * @param {string|number} fromNetwork - Source network
-   * @param {string|number} toNetwork - Destination network
-   * @returns {Array} Supported bridge keys
-   */
-  getSupportedBridgesForRoute(tokenSymbol, fromNetwork, toNetwork) {
-    const tokenConfig = this.getTokenConfig(tokenSymbol);
-    
-    if (!tokenConfig) {
-      return [];
-    }
-
-    const supportedBridges = tokenConfig.supportedBridges;
-    
-    return supportedBridges.filter(bridgeKey => {
-      return this.doesNetworkSupportBridge(fromNetwork, bridgeKey) &&
-             this.doesNetworkSupportBridge(toNetwork, bridgeKey);
-    });
-  }
-
-  /**
-   * Get bridge type from bridge key
-   * @param {string} bridgeKey - Bridge identifier
-   * @returns {string} Bridge type
-   */
-  getBridgeType(bridgeKey) {
-    if (bridgeKey.includes('layerzero')) return 'layerzero';
-    if (bridgeKey.includes('wormhole')) return 'wormhole';
-    if (bridgeKey.includes('axelar')) return 'axelar';
-    if (bridgeKey.includes('chainlink') || bridgeKey.includes('ccip')) return 'chainlink';
-    if (bridgeKey.includes('hyperlane')) return 'hyperlane';
-    if (bridgeKey.includes('multichain')) return 'multichain';
-    if (bridgeKey.includes('hop')) return 'hop';
-    if (bridgeKey.includes('across')) return 'across';
-    return 'unknown';
-  }
-
-  /**
-   * Check if a bridge is currently active
-   * @param {string} bridgeKey - Bridge identifier
-   * @returns {boolean} Whether bridge is active
-   */
-  isBridgeActive(bridgeKey) {
-    // Should integrate with real bridge status monitoring
-    // For now, check if bridge exists in config
-    return !!(this.config.bridges?.[bridgeKey]);
-  }
-
-  /**
-   * Get configuration health status
-   * @returns {Object} Health check results
-   */
-  getHealthStatus() {
-    try {
-      const health = healthCheck();
-      return {
-        ...health,
-        configLoader: {
-          initialized: this.isInitialized,
-          cacheSize: {
-            networks: this.networkCache.size,
-            contracts: this.contractCache.size
-          },
-          lastValidation: this.lastValidation?.timestamp
+  clearCache(bridgeKey = null, network = null) {
+    if (bridgeKey && network) {
+      const cacheKey = `${bridgeKey}-${network}`;
+      this.contractCache.delete(cacheKey);
+      this.logger.info(`Cleared cache for ${bridgeKey} on ${network}`);
+    } else if (bridgeKey) {
+      let cleared = 0;
+      for (const key of this.contractCache.keys()) {
+        if (key.startsWith(`${bridgeKey}-`)) {
+          this.contractCache.delete(key);
+          cleared++;
         }
-      };
-    } catch (error) {
-      return {
-        status: 'error',
-        error: error.message,
-        configLoader: {
-          initialized: this.isInitialized
-        }
-      };
-    }
-  }
-
-  /**
-   * Reload configuration (useful for hot-reloading)
-   * @returns {Promise<boolean>} Reload success
-   */
-  async reload() {
-    try {
-      console.log('🔄 Reloading bridge configuration...');
-      
-      // Clear caches
+      }
+      this.logger.info(`Cleared ${cleared} cached contracts for bridge ${bridgeKey}`);
+    } else {
+      const totalCleared = this.contractCache.size;
       this.contractCache.clear();
-      this.networkCache.clear();
-      
-      // Re-initialize
-      await this.initialize();
-      
-      console.log('✅ Configuration reloaded successfully');
-      return true;
-    } catch (error) {
-      console.error('❌ Configuration reload failed:', error.message);
-      return false;
+      this.abiCache.clear();
+      this.contractInterfaces.clear();
+      this.logger.info(`Cleared all ${totalCleared} cached contracts and ABIs`);
     }
   }
 
-  /**
-   * Get configuration summary for debugging
-   * @returns {Object} Configuration summary
-   */
-  getConfigSummary() {
-    this.ensureInitialized();
-    
-    const networks = Object.keys(this.config.networks || {});
-    const bridges = Object.keys(this.config.bridges || {});
-    const tokens = Object.keys(this.config.tokens || {});
-    
+  getCacheStats() {
     return {
-      networks: {
-        total: networks.length,
-        list: networks,
-        layerZeroEnabled: networks.filter(net => 
-          this.getNetworkConfig(net)?.layerZeroChainId
-        ).length
+      contracts: {
+        size: this.contractCache.size,
+        maxSize: this.contractCache.max,
+        ttl: '15 minutes'
       },
-      bridges: {
-        total: bridges.length,
-        list: bridges,
-        byType: bridges.reduce((acc, bridge) => {
-          const type = this.getBridgeType(bridge);
-          acc[type] = (acc[type] || 0) + 1;
-          return acc;
-        }, {})
+      providers: {
+        size: this.providerCache.size,
+        maxSize: this.providerCache.max,
+        ttl: '30 minutes'
       },
-      tokens: {
-        total: tokens.length,
-        list: tokens
+      abis: {
+        size: this.abiCache.size,
+        maxSize: this.abiCache.max,
+        ttl: '1 hour'
       },
-      customContracts: Object.keys(this.config.customContracts || {}),
-      lastValidated: this.lastValidation?.timestamp,
-      cacheStats: {
-        networks: this.networkCache.size,
-        contracts: this.contractCache.size
-      }
+      interfaces: {
+        size: this.contractInterfaces.size
+      },
+      signers: {
+        size: this.signerCache.size
+      },
+      concurrencyLimit: this.concurrency.limit,
+      retryConfig: this.retryConfig
     };
   }
 }
 
-// Create singleton instance
-const bridgeConfigLoader = new BridgeConfigLoader();
-
-// Export singleton instance and class
-module.exports = {
-  BridgeConfigLoader,
-  bridgeConfigLoader,
-  
-  // Convenience functions
-  getBridgeConfig: (bridgeKey) => bridgeConfigLoader.getBridgeConfig(bridgeKey),
-  getContractAddress: (bridgeKey, network, contractType) => 
-    bridgeConfigLoader.getContractAddress(bridgeKey, network, contractType),
-  getNetworkConfig: (identifier) => bridgeConfigLoader.getNetworkConfig(identifier),
-  getTokenConfig: (tokenSymbol) => bridgeConfigLoader.getTokenConfig(tokenSymbol),
-  getCustomContractAddress: (tokenSymbol, network) => 
-    bridgeConfigLoader.getCustomContractAddress(tokenSymbol, network),
-  getSupportedBridgesForRoute: (tokenSymbol, fromNetwork, toNetwork) =>
-    bridgeConfigLoader.getSupportedBridgesForRoute(tokenSymbol, fromNetwork, toNetwork),
-  getHealthStatus: () => bridgeConfigLoader.getHealthStatus(),
-  getConfigSummary: () => bridgeConfigLoader.getConfigSummary()
-};
+module.exports = { ContractLoader };
