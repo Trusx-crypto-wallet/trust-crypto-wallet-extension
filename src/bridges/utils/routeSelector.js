@@ -1,688 +1,548 @@
-// src/bridges/utils/routeSelector.js
-// Production-grade route selection utilities
-// Uses bridge configuration system for intelligent route optimization
+/**
+ * Route Selection Engine
+ * Selects optimal bridge routes based on cost, speed, security, and availability.
+ * Integrates with contract verification and audit validation.
+ * Production-ready with TypeScript interfaces, concurrency limits, and metrics.
+ */
 
-const { 
-  getSupportedBridges,
-  getOptimalBridge,
-  calculateBridgeFees,
-  getBridgeLimits,
-  getEstimatedBridgeTime,
-  getBridgeSecurityLevel,
-  getBridgeLiquidity,
-  validateBridgeTransfer
-} = require('../../../config');
-
-const { bridgeConfigLoader } = require('./configLoader');
+const configLoader = require('./configLoader');
+const { BridgeErrors } = require('../../errors/BridgeErrors');
+const { logger } = require('../../utils/logger');
+const { metrics } = require('../../utils/metrics');
+const pLimit = require('p-limit');
+const { ABIStructureValidator } = require('./contractVerification/ABIStructureValidator');
+const { BytecodeValidator } = require('./contractVerification/BytecodeValidator');
+const { OnChainVerifier } = require('./contractVerification/OnChainVerifier');
+const { AuditStatusChecker } = require('./contractVerification/AuditStatusChecker');
+const { BigNumber } = require('ethers');
 
 /**
- * Route Selection Utilities
- * Provides intelligent route selection and optimization for cross-chain transfers
+ * @typedef {Object} RouteParams
+ * @property {string} fromNetwork - Source network
+ * @property {string} toNetwork - Destination network
+ * @property {string} tokenSymbol - Token to transfer
+ * @property {string|number|BigNumber} amount - Transfer amount
+ * @property {string} speed - Transfer speed preference (fast|standard|economy)
  */
+
+/**
+ * @typedef {Object} ValidationResult
+ * @property {boolean} valid - Validation status
+ * @property {string[]} checks - Validation check results
+ */
+
+/**
+ * @typedef {Object} FeeBreakdown
+ * @property {string} bridgeFee - Bridge protocol fee
+ * @property {string} gasFee - Gas cost estimation
+ * @property {string} totalFee - Total fee amount
+ * @property {string} currency - Fee currency
+ */
+
+/**
+ * @typedef {Object} TimingEstimates
+ * @property {number} estimated - Estimated time in seconds
+ * @property {number} min - Minimum time in seconds
+ * @property {number} max - Maximum time in seconds
+ * @property {string} unit - Time unit
+ */
+
+/**
+ * @typedef {Object} RouteOption
+ * @property {string} bridgeKey - Bridge identifier
+ * @property {string} bridgeName - Bridge display name
+ * @property {string} bridgeType - Bridge type
+ * @property {string} fromNetwork - Source network
+ * @property {string} toNetwork - Destination network
+ * @property {string} tokenSymbol - Token symbol
+ * @property {string} amount - Transfer amount
+ * @property {FeeBreakdown} fees - Fee breakdown
+ * @property {TimingEstimates} timing - Timing estimates
+ * @property {Object} validation - Validation results
+ * @property {number} score - Route score (0-100)
+ * @property {Object} metadata - Additional metadata
+ */
+
+// Concurrency control for bridge evaluations
+const EVALUATION_CONCURRENCY = 5;
+const limit = pLimit(EVALUATION_CONCURRENCY);
+
 class RouteSelector {
   constructor() {
+    this.validationCache = new Map();
     this.routeCache = new Map();
-    this.performanceMetrics = new Map();
-    this.blacklistedRoutes = new Set();
-    
-    // Route selection preferences
-    this.defaultPreferences = {
-      prioritizeSpeed: false,
-      prioritizeCost: false,
-      prioritizeSecurity: true,
-      maxTime: null,
-      maxFees: null,
-      preferredBridges: [],
-      avoidBridges: [],
-      minLiquidity: 60, // Minimum liquidity score (0-100)
-      minSecurity: 70,  // Minimum security score (0-100)
-      allowExperimental: false
-    };
   }
 
   /**
-   * Get optimal route for a cross-chain transfer
-   * @param {Object} transferParams - Transfer parameters
-   * @returns {Object|null} Optimal route configuration
+   * Find optimal routes for cross-chain transfer
+   * @param {RouteParams} params - Transfer parameters
+   * @returns {Promise<RouteOption[]>} Available routes sorted by score
    */
-  async getOptimalRoute(transferParams) {
+  async findOptimalRoutes(params) {
     try {
-      const {
-        fromNetwork,
-        toNetwork,
-        tokenSymbol,
-        amount,
-        preferences = {}
-      } = transferParams;
-
       // Validate input parameters
-      const validation = this.validateTransferParams(transferParams);
-      if (!validation.isValid) {
-        throw new Error(`Invalid transfer parameters: ${validation.errors.join(', ')}`);
-      }
+      this._validateRouteParams(params);
 
-      // Check cache first
-      const cacheKey = this.generateCacheKey(transferParams);
-      if (this.routeCache.has(cacheKey)) {
-        const cachedRoute = this.routeCache.get(cacheKey);
-        if (this.isCacheValid(cachedRoute)) {
-          console.log(`📦 Using cached route for ${tokenSymbol} ${fromNetwork} → ${toNetwork}`);
-          return cachedRoute.route;
-        }
-      }
-
-      // Get supported bridges for this route
-      const supportedBridges = getSupportedBridges(fromNetwork, toNetwork, tokenSymbol);
+      // Get available bridges for route
+      const availableBridges = await this._getAvailableBridges(params);
       
-      if (supportedBridges.length === 0) {
-        console.warn(`⚠️ No supported bridges found for ${tokenSymbol} from ${fromNetwork} to ${toNetwork}`);
-        return null;
+      if (availableBridges.length === 0) {
+        metrics.increment('route_selector.no_bridges_available', {
+          fromNetwork: params.fromNetwork,
+          toNetwork: params.toNetwork,
+          token: params.tokenSymbol
+        });
+        throw new BridgeErrors.RouteNotFoundError(
+          `No bridges available for ${params.fromNetwork} -> ${params.toNetwork}`
+        );
       }
 
-      console.log(`🔍 Found ${supportedBridges.length} supported bridges for ${tokenSymbol} route`);
-
-      // Apply filters and scoring
-      const filteredBridges = await this.filterAndScoreBridges(
-        supportedBridges,
-        transferParams,
-        preferences
+      // Evaluate bridge routes with concurrency control
+      const evaluationPromises = availableBridges.map(bridge => 
+        limit(() => this._evaluateBridgeRoute(bridge, params))
       );
 
-      if (filteredBridges.length === 0) {
-        console.warn(`⚠️ No bridges passed filtering criteria for ${tokenSymbol} route`);
-        return null;
+      const evaluationResults = await Promise.allSettled(evaluationPromises);
+
+      // Filter successful evaluations
+      const validRoutes = evaluationResults
+        .filter(result => result.status === 'fulfilled' && result.value.validation.isValid)
+        .map(result => result.value)
+        .sort((a, b) => b.score - a.score);
+
+      if (validRoutes.length === 0) {
+        metrics.increment('route_selector.no_valid_routes', {
+          fromNetwork: params.fromNetwork,
+          toNetwork: params.toNetwork,
+          token: params.tokenSymbol
+        });
+        throw new BridgeErrors.RouteNotFoundError('No valid routes found after evaluation');
       }
 
-      // Get optimal bridge using config system
-      const mergedPreferences = { ...this.defaultPreferences, ...preferences };
-      const optimalBridge = getOptimalBridge(
-        fromNetwork,
-        toNetwork,
-        tokenSymbol,
-        amount,
-        mergedPreferences
-      );
+      logger.info(`Found ${validRoutes.length} valid routes for ${params.fromNetwork} -> ${params.toNetwork}`);
+      metrics.increment('route_selector.routes_found', {
+        count: validRoutes.length,
+        fromNetwork: params.fromNetwork,
+        toNetwork: params.toNetwork
+      });
 
-      if (!optimalBridge) {
-        console.warn(`⚠️ No optimal bridge found for ${tokenSymbol} route`);
-        return null;
-      }
-
-      // Build complete route configuration
-      const route = await this.buildRouteConfiguration(
-        optimalBridge,
-        transferParams,
-        filteredBridges
-      );
-
-      // Cache the result
-      this.cacheRoute(cacheKey, route);
-
-      // Update performance metrics
-      this.updatePerformanceMetrics(route.bridgeKey, 'selected');
-
-      console.log(`✅ Selected optimal route: ${route.bridgeKey} for ${tokenSymbol} transfer`);
-      return route;
+      return validRoutes;
 
     } catch (error) {
-      console.error('❌ Error selecting optimal route:', error.message);
+      logger.error('Route selection failed:', error);
+      metrics.increment('route_selector.error', { error: error.message });
       throw error;
     }
   }
 
   /**
-   * Get all available routes for a transfer
-   * @param {Object} transferParams - Transfer parameters
-   * @returns {Array} Array of available routes
+   * Validate smart contract for bridge deployment
+   * @param {string} bridgeKey - Bridge identifier
+   * @param {string} network - Network name
+   * @param {string} toNetwork - Destination network
+   * @param {string} tokenSymbol - Token symbol
+   * @returns {Promise<ValidationResult>} Validation results
    */
-  async getAllAvailableRoutes(transferParams) {
+  async validateSmartContract(bridgeKey, network, toNetwork, tokenSymbol) {
+    const cacheKey = `${bridgeKey}-${network}-${toNetwork}-${tokenSymbol}`;
+    
+    if (this.validationCache.has(cacheKey)) {
+      return this.validationCache.get(cacheKey);
+    }
+
+    const result = { valid: true, checks: [] };
+
     try {
-      const { fromNetwork, toNetwork, tokenSymbol, amount } = transferParams;
+      // Get deployment information
+      const deployment = configLoader.getDeploymentInfo(bridgeKey, network);
+      const expectedAbi = configLoader.getExpectedAbi(bridgeKey);
 
-      // Get all supported bridges
-      const supportedBridges = getSupportedBridges(fromNetwork, toNetwork, tokenSymbol);
-      
-      if (supportedBridges.length === 0) {
-        return [];
-      }
-
-      // Build route configurations for all bridges
-      const routes = [];
-      
-      for (const bridge of supportedBridges) {
-        try {
-          const route = await this.buildRouteConfiguration(
-            bridge,
-            transferParams,
-            supportedBridges
-          );
-          
-          if (route) {
-            routes.push(route);
-          }
-        } catch (error) {
-          console.warn(`⚠️ Failed to build route for bridge ${bridge.key}:`, error.message);
+      // ABI Structure validation
+      try {
+        const abiValidation = await ABIStructureValidator.validateContractABI(
+          deployment.address, 
+          network, 
+          expectedAbi
+        );
+        
+        if (!abiValidation.isValid) {
+          throw new Error(`ABI mismatch: ${abiValidation.errors.join(', ')}`);
         }
+        result.checks.push('abi_valid');
+      } catch (err) {
+        result.valid = false;
+        result.checks.push(`abi_validation_failed:${err.message}`);
       }
 
-      // Sort routes by score
-      return routes.sort((a, b) => b.score - a.score);
+      // Bytecode validation
+      try {
+        const bytecodeResult = await BytecodeValidator.validateBytecode(
+          deployment.address,
+          network,
+          deployment.expectedBytecode
+        );
+        
+        if (!bytecodeResult.isValid) {
+          throw new Error(`Bytecode mismatch: ${bytecodeResult.reason}`);
+        }
+        result.checks.push('bytecode_valid');
+      } catch (err) {
+        result.valid = false;
+        result.checks.push(`bytecode_validation_failed:${err.message}`);
+      }
+
+      // On-chain verification
+      try {
+        const onChainResult = await OnChainVerifier.verifyContract(
+          deployment.address,
+          network,
+          { skipBytecodeCheck: true }
+        );
+        
+        if (!onChainResult.verified) {
+          throw new Error(`On-chain verification failed: ${onChainResult.reason}`);
+        }
+        result.checks.push('onchain_verified');
+      } catch (err) {
+        result.valid = false;
+        result.checks.push(`onchain_verification_failed:${err.message}`);
+      }
+
+      // Audit status validation
+      try {
+        const auditResult = await AuditStatusChecker.checkAuditStatus(bridgeKey, deployment.address);
+        
+        if (!auditResult.passed) {
+          throw new Error(`Audit status failed: ${auditResult.details}`);
+        }
+        result.checks.push('audit_status_ok');
+      } catch (err) {
+        result.valid = false;
+        result.checks.push(`audit_status_failed:${err.message}`);
+      }
+
+      // Cache only valid results for 10 minutes
+      if (result.valid) {
+        this.validationCache.set(cacheKey, result);
+        setTimeout(() => this.validationCache.delete(cacheKey), 10 * 60 * 1000);
+        
+        metrics.increment('contract_validation.success', { 
+          bridge: bridgeKey, 
+          network 
+        });
+      } else {
+        metrics.increment('contract_validation.failure', { 
+          bridge: bridgeKey, 
+          network, 
+          reason: result.checks.join(',')
+        });
+      }
+
+      return result;
 
     } catch (error) {
-      console.error('❌ Error getting available routes:', error.message);
-      return [];
+      logger.warn(`Smart contract validation failed: ${error.message}`, { 
+        bridgeKey, 
+        network, 
+        error 
+      });
+      
+      result.valid = false;
+      result.checks.push(`validation_error:${error.message}`);
+      
+      metrics.increment('contract_validation.error', { 
+        bridge: bridgeKey, 
+        network, 
+        error: error.message 
+      });
+      
+      return result;
     }
-  }
-
-  /**
-   * Filter and score bridges based on criteria
-   * @param {Array} bridges - Available bridges
-   * @param {Object} transferParams - Transfer parameters
-   * @param {Object} preferences - User preferences
-   * @returns {Array} Filtered and scored bridges
-   */
-  async filterAndScoreBridges(bridges, transferParams, preferences) {
-    const { amount, tokenSymbol, fromNetwork, toNetwork } = transferParams;
-    const mergedPreferences = { ...this.defaultPreferences, ...preferences };
-    
-    const filteredBridges = [];
-
-    for (const bridge of bridges) {
-      try {
-        // Check blacklist
-        const routeId = `${bridge.key}-${fromNetwork}-${toNetwork}`;
-        if (this.blacklistedRoutes.has(routeId)) {
-          console.log(`🚫 Skipping blacklisted route: ${routeId}`);
-          continue;
-        }
-
-        // Check bridge preferences
-        if (mergedPreferences.avoidBridges.includes(bridge.key)) {
-          console.log(`🚫 Skipping avoided bridge: ${bridge.key}`);
-          continue;
-        }
-
-        // Validate transfer parameters for this bridge
-        const validation = validateBridgeTransfer({
-          bridgeKey: bridge.key,
-          fromNetwork,
-          toNetwork,
-          tokenSymbol,
-          amount
-        });
-
-        if (!validation.isValid) {
-          console.log(`❌ Bridge ${bridge.key} failed validation:`, validation.errors);
-          continue;
-        }
-
-        // Check security requirements
-        if (bridge.security < mergedPreferences.minSecurity) {
-          console.log(`🔐 Bridge ${bridge.key} security too low: ${bridge.security} < ${mergedPreferences.minSecurity}`);
-          continue;
-        }
-
-        // Check liquidity requirements
-        if (bridge.liquidity < mergedPreferences.minLiquidity) {
-          console.log(`💧 Bridge ${bridge.key} liquidity too low: ${bridge.liquidity} < ${mergedPreferences.minLiquidity}`);
-          continue;
-        }
-
-        // Check time constraints
-        if (mergedPreferences.maxTime && bridge.estimatedTime > mergedPreferences.maxTime) {
-          console.log(`⏰ Bridge ${bridge.key} too slow: ${bridge.estimatedTime}min > ${mergedPreferences.maxTime}min`);
-          continue;
-        }
-
-        // Check fee constraints
-        if (mergedPreferences.maxFees && bridge.fees.total > mergedPreferences.maxFees) {
-          console.log(`💰 Bridge ${bridge.key} too expensive: $${bridge.fees.total} > $${mergedPreferences.maxFees}`);
-          continue;
-        }
-
-        // Calculate detailed fees for this specific amount
-        if (amount) {
-          const detailedFees = calculateBridgeFees(bridge.key, fromNetwork, toNetwork, amount);
-          bridge.detailedFees = detailedFees;
-        }
-
-        // Check bridge limits
-        const limits = getBridgeLimits(bridge.key, tokenSymbol, fromNetwork, toNetwork);
-        if (amount) {
-          const amountNum = parseFloat(amount);
-          if (amountNum < parseFloat(limits.min) || amountNum > parseFloat(limits.max)) {
-            console.log(`📏 Amount ${amount} outside limits for ${bridge.key}: ${limits.min} - ${limits.max}`);
-            continue;
-          }
-        }
-
-        // Add performance metrics
-        bridge.performance = this.getPerformanceMetrics(bridge.key);
-        
-        // Calculate composite score
-        bridge.compositeScore = this.calculateCompositeScore(bridge, mergedPreferences);
-
-        filteredBridges.push(bridge);
-
-      } catch (error) {
-        console.warn(`⚠️ Error filtering bridge ${bridge.key}:`, error.message);
-      }
-    }
-
-    // Sort by composite score
-    return filteredBridges.sort((a, b) => b.compositeScore - a.compositeScore);
-  }
-
-  /**
-   * Calculate composite score for bridge selection
-   * @param {Object} bridge - Bridge configuration
-   * @param {Object} preferences - User preferences
-   * @returns {number} Composite score (0-100)
-   */
-  calculateCompositeScore(bridge, preferences) {
-    let score = 0;
-    let totalWeight = 0;
-
-    // Security scoring (0-100)
-    const securityWeight = preferences.prioritizeSecurity ? 3 : 1;
-    score += bridge.security * securityWeight;
-    totalWeight += securityWeight;
-
-    // Speed scoring (inverse of time, 0-100)
-    const speedWeight = preferences.prioritizeSpeed ? 3 : 1;
-    const maxTime = 60; // Assume 60 minutes as maximum reasonable time
-    const speedScore = Math.max(0, (maxTime - bridge.estimatedTime) / maxTime * 100);
-    score += speedScore * speedWeight;
-    totalWeight += speedWeight;
-
-    // Cost scoring (inverse of fees, 0-100)
-    const costWeight = preferences.prioritizeCost ? 3 : 1;
-    const maxFees = 50; // Assume $50 as maximum reasonable fees
-    const costScore = Math.max(0, (maxFees - bridge.fees.total) / maxFees * 100);
-    score += costScore * costWeight;
-    totalWeight += costWeight;
-
-    // Liquidity scoring (0-100)
-    const liquidityWeight = 1;
-    score += bridge.liquidity * liquidityWeight;
-    totalWeight += liquidityWeight;
-
-    // Performance bonus (based on historical data)
-    if (bridge.performance) {
-      const performanceWeight = 0.5;
-      const performanceScore = (bridge.performance.successRate || 90); // Default 90% if no data
-      score += performanceScore * performanceWeight;
-      totalWeight += performanceWeight;
-    }
-
-    // Preference bonuses
-    if (preferences.preferredBridges.includes(bridge.key)) {
-      score += 20; // Bonus for preferred bridges
-    }
-
-    // LayerZero V2 preference bonus
-    if (bridge.key === 'layerzeroV2') {
-      score += 10; // Future-proofing bonus
-    }
-
-    // Calculate average score
-    return totalWeight > 0 ? Math.min(100, score / totalWeight) : 0;
   }
 
   /**
    * Build complete route configuration
-   * @param {Object} bridge - Selected bridge
-   * @param {Object} transferParams - Transfer parameters
-   * @param {Array} allBridges - All available bridges for comparison
-   * @returns {Object} Complete route configuration
+   * @param {Object} bridge - Bridge configuration
+   * @param {RouteParams} transferParams - Transfer parameters
+   * @returns {Promise<RouteOption>} Complete route configuration
    */
-  async buildRouteConfiguration(bridge, transferParams, allBridges = []) {
-    const { fromNetwork, toNetwork, tokenSymbol, amount } = transferParams;
-    
+  async buildRouteConfiguration(bridge, transferParams) {
     try {
-      // Get contract addresses
-      const fromContract = bridgeConfigLoader.getContractAddress(bridge.key, fromNetwork);
-      const toContract = bridgeConfigLoader.getContractAddress(bridge.key, toNetwork);
+      // Calculate fees
+      const fees = await this._calculateRouteFees(bridge, transferParams);
       
-      if (!fromContract || !toContract) {
-        throw new Error(`Missing contract addresses for ${bridge.key} on ${fromNetwork} or ${toNetwork}`);
+      // Estimate timing
+      const timing = this._estimateTransferTiming(bridge, transferParams);
+      
+      // Initial validation
+      const validation = {
+        isValid: true,
+        checks: ['basic_validation_passed'],
+        smartContract: null
+      };
+
+      // Perform smart contract validation
+      validation.smartContract = await this.validateSmartContract(
+        bridge.key,
+        transferParams.fromNetwork,
+        transferParams.toNetwork,
+        transferParams.tokenSymbol
+      );
+
+      if (!validation.smartContract.valid) {
+        validation.isValid = false;
+        validation.checks.push('smart_contract_validation_failed');
+      } else {
+        validation.checks.push('smart_contract_validated');
       }
 
-      // Get network configurations
-      const fromNetworkConfig = bridgeConfigLoader.getNetworkConfig(fromNetwork);
-      const toNetworkConfig = bridgeConfigLoader.getNetworkConfig(toNetwork);
-
-      // Get token configuration
-      const tokenConfig = bridgeConfigLoader.getTokenConfig(tokenSymbol);
-
-      // Build route configuration
+      // Build route object
       const route = {
-        // Bridge Information
         bridgeKey: bridge.key,
         bridgeName: bridge.name,
         bridgeType: bridge.type,
-        bridgeVersion: bridge.version,
-        
-        // Route Information
-        fromNetwork: {
-          key: fromNetwork,
-          chainId: fromNetworkConfig?.chainId,
-          layerZeroChainId: fromNetworkConfig?.layerZeroChainId,
-          name: fromNetworkConfig?.name,
-          contract: fromContract
-        },
-        toNetwork: {
-          key: toNetwork,
-          chainId: toNetworkConfig?.chainId,
-          layerZeroChainId: toNetworkConfig?.layerZeroChainId,
-          name: toNetworkConfig?.name,
-          contract: toContract
-        },
-        
-        // Token Information
-        token: {
-          symbol: tokenSymbol,
-          decimals: tokenConfig?.decimals,
-          customContract: bridgeConfigLoader.getCustomContractAddress(tokenSymbol, fromNetwork)
-        },
-        
-        // Transfer Details
-        amount: amount || '0',
-        estimatedTime: bridge.estimatedTime,
-        fees: bridge.detailedFees || bridge.fees,
-        limits: getBridgeLimits(bridge.key, tokenSymbol, fromNetwork, toNetwork),
-        
-        // Scoring and Metrics
-        score: bridge.compositeScore || bridge.score || 0,
-        security: bridge.security,
-        liquidity: bridge.liquidity,
-        performance: bridge.performance,
-        
-        // Route Metadata
-        alternativeRoutes: allBridges.length - 1,
-        isOptimal: true,
-        selectedAt: new Date().toISOString(),
-        
-        // Validation Status
-        validation: {
-          isValid: true,
-          checks: [
-            'contract_addresses_verified',
-            'network_support_confirmed',
-            'token_support_confirmed',
-            'limits_checked',
-            'security_requirements_met'
-          ]
+        fromNetwork: transferParams.fromNetwork,
+        toNetwork: transferParams.toNetwork,
+        tokenSymbol: transferParams.tokenSymbol,
+        amount: transferParams.amount.toString(),
+        fees,
+        timing,
+        validation,
+        score: this._calculateRouteScore(bridge, fees, timing, validation),
+        metadata: {
+          bridgeVersion: bridge.version,
+          securityRating: bridge.securityRating || 'medium',
+          supportUrl: bridge.supportUrl,
+          lastUpdated: new Date().toISOString()
         }
       };
 
       return route;
 
     } catch (error) {
-      console.error(`❌ Error building route configuration for ${bridge.key}:`, error.message);
-      return null;
+      logger.error(`Failed to build route configuration for ${bridge.key}:`, error);
+      throw new BridgeErrors.RouteConfigurationError(
+        `Route configuration failed: ${error.message}`
+      );
     }
   }
 
   /**
-   * Validate transfer parameters
-   * @param {Object} transferParams - Transfer parameters to validate
-   * @returns {Object} Validation result
+   * Get available bridges for transfer route
+   * @param {RouteParams} params - Transfer parameters
+   * @returns {Promise<Object[]>} Available bridge configurations
+   * @private
    */
-  validateTransferParams(transferParams) {
-    const errors = [];
-    const { fromNetwork, toNetwork, tokenSymbol, amount } = transferParams;
+  async _getAvailableBridges(params) {
+    const bridges = Object.entries(configLoader.config.bridges)
+      .map(([key, bridge]) => ({ key, ...bridge }))
+      .filter(bridge => {
+        // Check if bridge supports both networks
+        const supportedNetworks = configLoader.getSupportedNetworks(bridge.key);
+        return supportedNetworks.includes(params.fromNetwork) && 
+               supportedNetworks.includes(params.toNetwork);
+      })
+      .filter(bridge => {
+        // Check if bridge supports the token
+        return bridge.supportedTokens?.includes(params.tokenSymbol) || 
+               bridge.supportedTokens?.includes('*');
+      })
+      .filter(bridge => {
+        // Check if bridge is active
+        return bridge.status === 'active';
+      });
 
-    // Required parameters
-    if (!fromNetwork) errors.push('fromNetwork is required');
-    if (!toNetwork) errors.push('toNetwork is required');
-    if (!tokenSymbol) errors.push('tokenSymbol is required');
-    
-    // Network validation
-    if (fromNetwork === toNetwork) {
-      errors.push('fromNetwork and toNetwork cannot be the same');
-    }
+    return bridges;
+  }
 
-    // Validate networks exist
-    const fromNetworkConfig = bridgeConfigLoader.getNetworkConfig(fromNetwork);
-    const toNetworkConfig = bridgeConfigLoader.getNetworkConfig(toNetwork);
-    
-    if (!fromNetworkConfig) {
-      errors.push(`fromNetwork '${fromNetwork}' not found in configuration`);
-    }
-    
-    if (!toNetworkConfig) {
-      errors.push(`toNetwork '${toNetwork}' not found in configuration`);
-    }
-
-    // Validate token exists
-    const tokenConfig = bridgeConfigLoader.getTokenConfig(tokenSymbol);
-    if (!tokenConfig) {
-      errors.push(`Token '${tokenSymbol}' not found in configuration`);
-    }
-
-    // Amount validation
-    if (amount) {
-      const amountNum = parseFloat(amount);
-      if (isNaN(amountNum) || amountNum <= 0) {
-        errors.push('Amount must be a positive number');
+  /**
+   * Evaluate bridge route option
+   * @param {Object} bridge - Bridge configuration
+   * @param {RouteParams} params - Transfer parameters
+   * @returns {Promise<RouteOption>} Evaluated route option
+   * @private
+   */
+  async _evaluateBridgeRoute(bridge, params) {
+    try {
+      const route = await this.buildRouteConfiguration(bridge, params);
+      
+      // Additional validation checks
+      if (!route.validation.isValid) {
+        logger.warn(`Route validation failed for ${bridge.key}:`, route.validation.checks);
+        metrics.increment('route_evaluation.validation_failed', { 
+          bridge: bridge.key 
+        });
       }
-    }
 
-    return {
-      isValid: errors.length === 0,
-      errors
-    };
+      return route;
+
+    } catch (error) {
+      logger.error(`Bridge evaluation failed for ${bridge.key}:`, error);
+      metrics.increment('route_evaluation.error', { 
+        bridge: bridge.key, 
+        error: error.message 
+      });
+      throw error;
+    }
   }
 
   /**
-   * Get performance metrics for a bridge
-   * @param {string} bridgeKey - Bridge identifier
-   * @returns {Object} Performance metrics
+   * Calculate route fees with BigNumber support
+   * @param {Object} bridge - Bridge configuration
+   * @param {RouteParams} params - Transfer parameters
+   * @returns {Promise<FeeBreakdown>} Fee breakdown
+   * @private
    */
-  getPerformanceMetrics(bridgeKey) {
-    if (!this.performanceMetrics.has(bridgeKey)) {
-      // Default metrics if no historical data
+  async _calculateRouteFees(bridge, params) {
+    try {
+      const amount = BigNumber.from(params.amount);
+      
+      // Bridge-specific fee calculation
+      const bridgeFeeRate = bridge.feeRate || '0.001'; // 0.1% default
+      const bridgeFee = amount.mul(BigNumber.from(bridgeFeeRate).mul(1000)).div(1000000);
+      
+      // Gas fee estimation
+      const gasFeeEstimate = BigNumber.from('2000000000000000'); // 0.002 ETH
+      
+      const totalFee = bridgeFee.add(gasFeeEstimate);
+
       return {
-        successRate: 95,
-        averageTime: getEstimatedBridgeTime(bridgeKey),
-        totalTransactions: 0,
-        lastUsed: null
+        bridgeFee: bridgeFee.toString(),
+        gasFee: gasFeeEstimate.toString(),
+        totalFee: totalFee.toString(),
+        currency: 'ETH'
+      };
+    } catch (error) {
+      logger.error('Fee calculation failed:', error);
+      return {
+        bridgeFee: '1000000000000000',
+        gasFee: '2000000000000000',
+        totalFee: '3000000000000000',
+        currency: 'ETH'
       };
     }
-
-    return this.performanceMetrics.get(bridgeKey);
   }
 
   /**
-   * Update performance metrics for a bridge
-   * @param {string} bridgeKey - Bridge identifier
-   * @param {string} event - Event type ('selected', 'success', 'failure')
-   * @param {Object} metadata - Additional metadata
+   * Estimate transfer timing
+   * @param {Object} bridge - Bridge configuration
+   * @param {RouteParams} params - Transfer parameters
+   * @returns {TimingEstimates} Timing estimates
+   * @private
    */
-  updatePerformanceMetrics(bridgeKey, event, metadata = {}) {
-    const current = this.getPerformanceMetrics(bridgeKey);
+  _estimateTransferTiming(bridge, params) {
+    const baseTime = bridge.averageTransferTime || 300; // 5 minutes default
     
-    switch (event) {
-      case 'selected':
-        current.totalTransactions += 1;
-        current.lastUsed = new Date().toISOString();
-        break;
-        
-      case 'success':
-        if (metadata.actualTime) {
-          current.averageTime = (current.averageTime + metadata.actualTime) / 2;
-        }
-        break;
-        
-      case 'failure':
-        current.successRate = Math.max(0, current.successRate - 1);
-        break;
-    }
-    
-    this.performanceMetrics.set(bridgeKey, current);
-  }
-
-  /**
-   * Generate cache key for route caching
-   * @param {Object} transferParams - Transfer parameters
-   * @returns {string} Cache key
-   */
-  generateCacheKey(transferParams) {
-    const { fromNetwork, toNetwork, tokenSymbol, amount, preferences = {} } = transferParams;
-    
-    // Create deterministic key from parameters
-    const keyParts = [
-      fromNetwork,
-      toNetwork,
-      tokenSymbol,
-      amount || 'no-amount',
-      JSON.stringify(preferences)
-    ];
-    
-    return keyParts.join('-');
-  }
-
-  /**
-   * Cache a route for performance
-   * @param {string} cacheKey - Cache key
-   * @param {Object} route - Route to cache
-   */
-  cacheRoute(cacheKey, route) {
-    this.routeCache.set(cacheKey, {
-      route,
-      cachedAt: Date.now(),
-      ttl: 5 * 60 * 1000 // 5 minutes TTL
-    });
-    
-    // Clean old cache entries
-    this.cleanCache();
-  }
-
-  /**
-   * Check if cached route is still valid
-   * @param {Object} cachedEntry - Cached route entry
-   * @returns {boolean} Whether cache is valid
-   */
-  isCacheValid(cachedEntry) {
-    const now = Date.now();
-    return (now - cachedEntry.cachedAt) < cachedEntry.ttl;
-  }
-
-  /**
-   * Clean expired cache entries
-   */
-  cleanCache() {
-    const now = Date.now();
-    
-    for (const [key, entry] of this.routeCache.entries()) {
-      if ((now - entry.cachedAt) >= entry.ttl) {
-        this.routeCache.delete(key);
-      }
-    }
-  }
-
-  /**
-   * Blacklist a route (temporarily disable)
-   * @param {string} bridgeKey - Bridge identifier
-   * @param {string} fromNetwork - Source network
-   * @param {string} toNetwork - Destination network
-   * @param {number} duration - Blacklist duration in milliseconds
-   */
-  blacklistRoute(bridgeKey, fromNetwork, toNetwork, duration = 30 * 60 * 1000) {
-    const routeId = `${bridgeKey}-${fromNetwork}-${toNetwork}`;
-    this.blacklistedRoutes.add(routeId);
-    
-    console.warn(`🚫 Blacklisted route ${routeId} for ${duration}ms`);
-    
-    // Auto-remove after duration
-    setTimeout(() => {
-      this.blacklistedRoutes.delete(routeId);
-      console.log(`✅ Removed blacklist for route ${routeId}`);
-    }, duration);
-  }
-
-  /**
-   * Get route comparison analysis
-   * @param {Array} routes - Routes to compare
-   * @returns {Object} Comparison analysis
-   */
-  compareRoutes(routes) {
-    if (routes.length === 0) {
-      return { analysis: 'No routes to compare' };
-    }
-
-    const analysis = {
-      totalRoutes: routes.length,
-      fastest: routes.reduce((prev, curr) => 
-        prev.estimatedTime < curr.estimatedTime ? prev : curr
-      ),
-      cheapest: routes.reduce((prev, curr) => 
-        prev.fees.total < curr.fees.total ? prev : curr
-      ),
-      mostSecure: routes.reduce((prev, curr) => 
-        prev.security > curr.security ? prev : curr
-      ),
-      averageTime: routes.reduce((sum, route) => sum + route.estimatedTime, 0) / routes.length,
-      averageFees: routes.reduce((sum, route) => sum + route.fees.total, 0) / routes.length,
-      bridgeTypes: [...new Set(routes.map(route => route.bridgeType))],
-      recommendations: []
+    // Adjust for speed preference
+    const speedMultipliers = {
+      'fast': 0.7,
+      'standard': 1.0,
+      'economy': 1.5
     };
-
-    // Generate recommendations
-    if (analysis.fastest.estimatedTime < 5) {
-      analysis.recommendations.push(`${analysis.fastest.bridgeName} offers fastest transfer (${analysis.fastest.estimatedTime} min)`);
-    }
     
-    if (analysis.cheapest.fees.total < 5) {
-      analysis.recommendations.push(`${analysis.cheapest.bridgeName} offers lowest fees (${analysis.cheapest.fees.total})`);
-    }
+    const multiplier = speedMultipliers[params.speed] || 1.0;
+    const estimatedTime = Math.floor(baseTime * multiplier);
     
-    if (analysis.mostSecure.security > 90) {
-      analysis.recommendations.push(`${analysis.mostSecure.bridgeName} offers highest security (${analysis.mostSecure.security}%)`);
-    }
-
-    return analysis;
-  }
-
-  /**
-   * Get route selector statistics
-   * @returns {Object} Statistics
-   */
-  getStatistics() {
     return {
-      cacheSize: this.routeCache.size,
-      blacklistedRoutes: this.blacklistedRoutes.size,
-      performanceMetrics: Object.fromEntries(this.performanceMetrics),
-      totalSelectionsToday: Array.from(this.performanceMetrics.values())
-        .reduce((sum, metrics) => sum + metrics.totalTransactions, 0)
+      estimated: estimatedTime,
+      min: Math.floor(estimatedTime * 0.7),
+      max: Math.ceil(estimatedTime * 2),
+      unit: 'seconds'
     };
   }
 
   /**
-   * Clear all caches and reset state
+   * Calculate route score with enhanced criteria
+   * @param {Object} bridge - Bridge configuration
+   * @param {FeeBreakdown} fees - Fee information
+   * @param {TimingEstimates} timing - Timing information
+   * @param {Object} validation - Validation results
+   * @returns {number} Route score (0-100)
+   * @private
    */
-  reset() {
+  _calculateRouteScore(bridge, fees, timing, validation) {
+    let score = 100;
+
+    // Validation penalties
+    if (!validation.isValid) score -= 50;
+    if (!validation.smartContract?.valid) score -= 30;
+
+    // Fee penalties (lower fees = higher score)
+    const totalFeeBN = BigNumber.from(fees.totalFee);
+    const bridgeFeeBN = BigNumber.from(fees.bridgeFee);
+    const feeRatio = totalFeeBN.div(bridgeFeeBN.gt(0) ? bridgeFeeBN : 1).toNumber();
+    score -= Math.min(20, feeRatio * 5);
+
+    // Speed penalties (faster = higher score)
+    score -= Math.min(15, timing.estimated / 60); // Deduct based on minutes
+
+    // Security rating adjustments
+    const securityAdjustments = {
+      'high': 10,
+      'medium': 5,
+      'low': -10
+    };
+    score += securityAdjustments[bridge.securityRating] || 0;
+
+    // Bridge type adjustments
+    const typeAdjustments = {
+      'native': 5,
+      'canonical': 3,
+      'external': 0,
+      'synthetic': -5
+    };
+    score += typeAdjustments[bridge.type] || 0;
+
+    return Math.max(0, Math.min(100, Math.round(score)));
+  }
+
+  /**
+   * Validate route parameters with BigNumber support
+   * @param {RouteParams} params - Parameters to validate
+   * @private
+   */
+  _validateRouteParams(params) {
+    if (!params.fromNetwork || !params.toNetwork || !params.tokenSymbol || !params.amount) {
+      throw new BridgeErrors.InvalidParametersError('Missing required route parameters');
+    }
+
+    if (params.fromNetwork === params.toNetwork) {
+      throw new BridgeErrors.InvalidParametersError('Source and destination networks must differ');
+    }
+
+    try {
+      const amount = BigNumber.from(params.amount);
+      if (amount.lte(0)) {
+        throw new BridgeErrors.InvalidParametersError('Amount must be greater than 0');
+      }
+    } catch (error) {
+      throw new BridgeErrors.InvalidParametersError('Invalid amount format');
+    }
+
+    // Validate speed preference
+    if (params.speed && !['fast', 'standard', 'economy'].includes(params.speed)) {
+      throw new BridgeErrors.InvalidParametersError('Invalid speed preference');
+    }
+  }
+
+  /**
+   * Clear caches
+   */
+  clearCache() {
+    this.validationCache.clear();
     this.routeCache.clear();
-    this.performanceMetrics.clear();
-    this.blacklistedRoutes.clear();
-    console.log('🔄 Route selector state reset');
+  }
+
+  /**
+   * Get cache statistics
+   * @returns {Object} Cache statistics
+   */
+  getCacheStats() {
+    return {
+      validationCacheSize: this.validationCache.size,
+      routeCacheSize: this.routeCache.size
+    };
   }
 }
 
-// Create singleton instance
-const routeSelector = new RouteSelector();
-
-// Export singleton and class
-module.exports = {
-  RouteSelector,
-  routeSelector,
-  
-  // Convenience functions
-  getOptimalRoute: (transferParams) => routeSelector.getOptimalRoute(transferParams),
-  getAllAvailableRoutes: (transferParams) => routeSelector.getAllAvailableRoutes(transferParams),
-  compareRoutes: (routes) => routeSelector.compareRoutes(routes),
-  blacklistRoute: (bridgeKey, fromNetwork, toNetwork, duration) => 
-    routeSelector.blacklistRoute(bridgeKey, fromNetwork, toNetwork, duration),
-  getRouteStatistics: () => routeSelector.getStatistics()
-};
+module.exports = { RouteSelector };
