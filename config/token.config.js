@@ -1,8 +1,35 @@
-// config/token.config.js
+// config/tokenconfig.js
 // ------------------------------------------------------------
-// Canonical token metadata for all supported chains.
+// Canonical token metadata for all supported chains with IPFS integration.
 // Logo images live in public/images/tokens/.
+// IPFS data sources for dynamic token lists.
 // ------------------------------------------------------------
+
+// IPFS Integration - Your Production Hashes
+export const TOKEN_LISTS = Object.freeze({
+  mainnet: {
+    uri: "ipfs://bafkreidrjqn645yqrpyoctbx6awbf6gwio47n2hk54qpgcnaxypgugrj6a",
+    fallback: "https://gateway.pinata.cloud/ipfs/bafkreidrjqn645yqrpyoctbx6awbf6gwio47n2hk54qpgcnaxypgugrj6a"
+  },
+  testnet: {
+    uri: "ipfs://bafkreibiwwrs5xmhgyp3pvdl3xrdzryxzl5oyq6lh7dl3qbxa63vgl33da",
+    fallback: "https://gateway.pinata.cloud/ipfs/bafkreibiwwrs5xmhgyp3pvdl3xrdzryxzl5oyq6lh7dl3qbxa63vgl33da"
+  },
+  base: {
+    uri: "ipfs://bafkreida6oqbjj4zot3iui43qyautdsszznsnx2pbsudocafhgcnwcchqq",
+    fallback: "https://gateway.pinata.cloud/ipfs/bafkreida6oqbjj4zot3iui43qyautdsszznsnx2pbsudocafhgcnwcchqq"
+  }
+});
+
+export const IPFS_CONFIG = Object.freeze({
+  gateways: [
+    "https://gateway.pinata.cloud/ipfs/",
+    "https://ipfs.io/ipfs/",
+    "https://cloudflare-ipfs.com/ipfs/"
+  ],
+  timeout: 5000,
+  retries: 3
+});
 
 export const CHAIN_IDS = Object.freeze({
   // ── Mainnets ───────────────────────────────────────────────
@@ -27,7 +54,8 @@ const logo    = (file) => `/images/tokens/${file}`;
 const UNKNOWN = logo('unknown-token.png');
 
 // ------------------------------------------------------------
-// TOKENS[chainId] → array of token objects
+// TOKENS[chainId] → array of token objects (Static fallback)
+// Primary data source is IPFS, this is fallback only
 // ------------------------------------------------------------
 export const TOKENS = Object.freeze({
   // ── Mainnets ───────────────────────────────────────────────
@@ -118,7 +146,7 @@ export const TOKEN_CONFIGS = Object.freeze({
 });
 
 // ------------------------------------------------------------
-//  Helper utilities
+//  Helper utilities (Extended with IPFS support)
 // ------------------------------------------------------------
 
 export const getTokensForChain = (chainId) => TOKENS[chainId] || [];
@@ -137,7 +165,6 @@ export const getSupportedChainIds = () => Object.values(CHAIN_IDS);
 
 export const getTokenConfig = (chainKey) => TOKEN_CONFIGS[chainKey] || null;
 
-/* NEW helpers */
 export const getAllTokens = () => Object.values(TOKENS).flat();
 
 const TESTNET_IDS = new Set([
@@ -149,3 +176,21 @@ const TESTNET_IDS = new Set([
   CHAIN_IDS.POLYGON_AMOY
 ]);
 export const isTestnet = (chainId) => TESTNET_IDS.has(chainId);
+
+// ------------------------------------------------------------
+// IPFS Integration Helpers
+// ------------------------------------------------------------
+
+export const getTokenListURI = (environment = 'mainnet') => {
+  const config = TOKEN_LISTS[environment];
+  return config ? config.uri : null;
+};
+
+export const getTokenListFallback = (environment = 'mainnet') => {
+  const config = TOKEN_LISTS[environment];
+  return config ? config.fallback : null;
+};
+
+export const getIPFSGateways = () => IPFS_CONFIG.gateways;
+
+export const getIPFSTimeout = () => IPFS_CONFIG.timeout;
